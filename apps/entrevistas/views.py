@@ -165,8 +165,10 @@ class EntrevistaViewSet(ModelViewSet):
                         entrevista_id=entrevista.id,
                         invitados=invitados_para_email,
                         titulo_entrevista=titulo,
+                        descripcion=descripcion,
                         evaluador_nombre=evaluador.get_full_name() if evaluador else usuario.get_full_name(),
                         fecha_programada=fecha_str,
+                        duracion_minutos=duracion_minutos,
                     )
                     emails_encolados = True
                     logger.info(
