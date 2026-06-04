@@ -13,8 +13,10 @@ def enviar_email_invitacion(
     email_invitado: str,
     link_invitacion: str,
     titulo_entrevista: str,
+    descripcion: str,
     evaluador_nombre: str,
     fecha_programada: str,
+    duracion_minutos: int,
 ):
     """
     Envía email de invitación a un candidato con su link único.
@@ -32,8 +34,10 @@ Hola {nombre_invitado},
 📋 DETALLES DE LA EVALUACIÓN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Evaluación: {titulo_entrevista}
+Descripción: {descripcion}
 Evaluador: {evaluador_nombre}
 Fecha y Hora: {fecha_programada}
+Duración estimada: {duracion_minutos} minutos
 
 🔗 TU LINK DE ACCESO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -86,8 +90,10 @@ def enviar_emails_invitaciones_masivas(
     entrevista_id: int,
     invitados: list,
     titulo_entrevista: str,
+    descripcion: str,
     evaluador_nombre: str,
     fecha_programada: str,
+    duracion_minutos: int,
 ):
     """
     Encola múltiples tareas de envío de email (una por cada invitado).
@@ -105,8 +111,10 @@ def enviar_emails_invitaciones_masivas(
                     email_invitado=invitado["email"],
                     link_invitacion=invitado["link_invitacion"],
                     titulo_entrevista=titulo_entrevista,
+                    descripcion=descripcion,
                     evaluador_nombre=evaluador_nombre,
                     fecha_programada=fecha_programada,
+                    duracion_minutos=duracion_minutos,
                 )
                 
                 emails_encolados.append({
