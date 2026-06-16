@@ -54,6 +54,125 @@ class Prueba(models.Model):
         return self.titulo
 
 
+class Seccion(models.Model):
+    """
+    Sección de una prueba. Agrupa preguntas y lleva el peso porcentual con el que
+    esa sección entra en la nota final.
+
+    Patrón "siempre al menos una sección": una prueba simple usa una sola sección
+    ("General", 100%); una estructurada usa varias (ej: Teoría 40% / Práctica 60%).
+    Así el cálculo de nota es uniforme, haya una o muchas.
+    """
+
+    prueba = models.ForeignKey(
+        "pruebas.Prueba",
+        on_delete=models.CASCADE,
+        related_name="secciones",
+    )
+    titulo = models.CharField(max_length=150, default="General")
+    descripcion = models.TextField(blank=True, null=True)
+    orden = models.PositiveIntegerField(default=1)
+    peso_porcentual = models.PositiveIntegerField(
+        default=100,
+        help_text="Peso de la sección en la nota final (0-100).",
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["prueba", "orden"]
+        unique_together = ("prueba", "orden")
+        verbose_name = "Sección"
+        verbose_name_plural = "Secciones"
+
+    def __str__(self):
+        return f"{self.prueba.titulo} - {self.titulo} ({self.peso_porcentual}%)"
+
+
+class Pregunta(models.Model):
+    """
+    Pregunta dentro de una sección. El `formato` define cómo se responde y se
+    califica; los campos específicos se usan según el formato:
+      - opcion_multiple / verdadero_falso -> ver modelo Opcion (relación 'opciones')
+      - abierta -> 'rubrica' (JSON, la usa la IA para calificar)
+      - codigo  -> 'lenguaje' + 'casos_prueba' (JSON)
+    """
+
+    class Formato(models.TextChoices):
+        OPCION_MULTIPLE = "opcion_multiple", "Opción múltiple"
+        VERDADERO_FALSO = "verdadero_falso", "Verdadero / Falso"
+        ABIERTA = "abierta", "Respuesta abierta"
+        CODIGO = "codigo", "Código"
+
+    seccion = models.ForeignKey(
+        "pruebas.Seccion",
+        on_delete=models.CASCADE,
+        related_name="preguntas",
+    )
+    enunciado = models.TextField()
+    formato = models.CharField(max_length=30, choices=Formato.choices)
+    puntaje = models.PositiveIntegerField(default=1)
+    orden = models.PositiveIntegerField(default=1)
+
+    # Datos específicos según el formato
+    rubrica = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Criterios para calificar preguntas abiertas (usado por la IA).",
+    )
+    lenguaje = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Lenguaje para preguntas de código (ej: python).",
+    )
+    casos_prueba = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Casos para código: [{'entrada': ..., 'salida_esperada': ...}].",
+    )
+
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["seccion", "orden"]
+        unique_together = ("seccion", "orden")
+        verbose_name = "Pregunta"
+        verbose_name_plural = "Preguntas"
+
+    def __str__(self):
+        return f"[{self.get_formato_display()}] {self.enunciado[:50]}"
+
+
+class Opcion(models.Model):
+    """Opción de una pregunta de opción múltiple o verdadero/falso."""
+
+    pregunta = models.ForeignKey(
+        "pruebas.Pregunta",
+        on_delete=models.CASCADE,
+        related_name="opciones",
+    )
+    texto = models.CharField(max_length=500)
+    es_correcta = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=1)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["pregunta", "orden"]
+        verbose_name = "Opción"
+        verbose_name_plural = "Opciones"
+
+    def __str__(self):
+        marca = " (correcta)" if self.es_correcta else ""
+        return f"{self.texto[:40]}{marca}"
+
+
 class PruebaEntrevista(models.Model):
     class Estado(models.TextChoices):
         ASIGNADA = "asignada", "Asignada"
