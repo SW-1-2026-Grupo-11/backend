@@ -212,8 +212,13 @@ class SesionViewSet(ModelViewSet):
         base_url = request.build_absolute_uri("/").rstrip("/")
         link_invitacion = f"{base_url}/join?token={token_str}"
 
+        # Resolver/crear la identidad reutilizable del candidato (Módulo 1/3)
+        from apps.candidatos.models import Candidato
+        candidato = Candidato.objects.obtener_o_crear(email=email, nombre=nombre)
+
         invitado = Invitado.objects.create(
             entrevista=sesion.entrevista,
+            candidato=candidato,
             nombre=nombre,
             email=email,
             rol="invitado",

@@ -80,6 +80,14 @@ class Invitado(models.Model):
         on_delete=models.CASCADE,
         related_name="invitados",
     )
+    candidato = models.ForeignKey(
+        "candidatos.Candidato",
+        on_delete=models.SET_NULL,
+        related_name="invitaciones",
+        blank=True,
+        null=True,
+        help_text="Identidad reutilizable del candidato (Módulo 1/3)",
+    )
     nombre = models.CharField(max_length=100)
     email = models.EmailField()
     rol = models.CharField(

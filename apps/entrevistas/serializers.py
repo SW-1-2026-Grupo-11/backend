@@ -6,8 +6,8 @@ from .models import Entrevista, Invitado, Etapa
 class InvitadoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invitado
-        fields = ["id", "nombre", "email", "rol", "estado", "link_invitacion", "fecha_invitacion", "fecha_aceptacion"]
-        read_only_fields = ["id", "fecha_invitacion", "fecha_aceptacion", "link_invitacion"]
+        fields = ["id", "candidato", "nombre", "email", "rol", "estado", "link_invitacion", "fecha_invitacion", "fecha_aceptacion"]
+        read_only_fields = ["id", "candidato", "fecha_invitacion", "fecha_aceptacion", "link_invitacion"]
 
 
 class EtapaSerializer(serializers.ModelSerializer):

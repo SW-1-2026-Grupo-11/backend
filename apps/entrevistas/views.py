@@ -11,6 +11,7 @@ from .models import Entrevista, Invitado
 from .serializers import EntrevistaSerializer, ProgramarEntrevistaSerializer, InvitadoSerializer
 from .tasks import enviar_emails_invitaciones_masivas
 from apps.usuarios.models import Usuario
+from apps.candidatos.models import Candidato
 from apps.sesiones.models import Sesion
 
 logger = logging.getLogger(__name__)
@@ -120,8 +121,12 @@ class EntrevistaViewSet(ModelViewSet):
                 token_str = str(refresh.access_token)
                 link_invitacion = f"{base_url}/join?token={token_str}"
 
+                # Resolver/crear la identidad reutilizable del candidato (Módulo 1/3)
+                candidato = Candidato.objects.obtener_o_crear(email=email, nombre=nombre)
+
                 invitado = Invitado.objects.create(
                     entrevista=entrevista,
+                    candidato=candidato,
                     nombre=nombre,
                     email=email,
                     rol="invitado",
