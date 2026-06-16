@@ -40,6 +40,10 @@ class Prueba(models.Model):
         choices=Estado.choices,
         default=Estado.BORRADOR,
     )
+    reutilizable = models.BooleanField(
+        default=True,
+        help_text="Si la prueba puede reutilizarse en múltiples convocatorias.",
+    )
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
 
@@ -64,12 +68,22 @@ class Seccion(models.Model):
     Así el cálculo de nota es uniforme, haya una o muchas.
     """
 
+    class Tipo(models.TextChoices):
+        TEORICA = "teorica", "Teórica"
+        PRACTICA = "practica", "Práctica"
+
     prueba = models.ForeignKey(
         "pruebas.Prueba",
         on_delete=models.CASCADE,
         related_name="secciones",
     )
     titulo = models.CharField(max_length=150, default="General")
+    tipo = models.CharField(
+        max_length=20,
+        choices=Tipo.choices,
+        default=Tipo.TEORICA,
+        help_text="Naturaleza de la sección: teórica o práctica.",
+    )
     descripcion = models.TextField(blank=True, null=True)
     orden = models.PositiveIntegerField(default=1)
     peso_porcentual = models.PositiveIntegerField(

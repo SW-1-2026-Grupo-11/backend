@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from .models import Entrevista, Invitado, Etapa
+from .models import Entrevista, Invitado
 
 # este es el serializer de la app entrevistas
+
 
 class InvitadoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,29 +11,8 @@ class InvitadoSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "candidato", "fecha_invitacion", "fecha_aceptacion", "link_invitacion"]
 
 
-class EtapaSerializer(serializers.ModelSerializer):
-    """Serializer para etapas de entrevista (Punto 6)"""
-    class Meta:
-        model = Etapa
-        fields = [
-            "id",
-            "entrevista",
-            "titulo",
-            "descripcion",
-            "orden",
-            "duracion_estimada_minutos",
-            "estado",
-            "fecha_inicio",
-            "fecha_fin",
-            "fecha_creacion",
-            "fecha_actualizacion",
-        ]
-        read_only_fields = ["id", "fecha_creacion", "fecha_actualizacion"]
-
-
 class EntrevistaSerializer(serializers.ModelSerializer):
     invitados = InvitadoSerializer(many=True, read_only=True)
-    etapas = EtapaSerializer(many=True, read_only=True)
     creada_por_nombre = serializers.CharField(source="creada_por.get_full_name", read_only=True)
     evaluador_nombre = serializers.CharField(source="evaluador.get_full_name", read_only=True, allow_null=True)
 
@@ -49,15 +29,7 @@ class EntrevistaSerializer(serializers.ModelSerializer):
             "estado",
             "fecha_programada",
             "duracion_minutos",
-            # Punto 6: Metadata
-            "area_entrevista",
-            "tipo_prueba",
-            "porcentaje_teorica",
-            "porcentaje_practica",
-            # Relaciones
             "invitados",
-            "etapas",
-            # Timestamps
             "fecha_creacion",
             "fecha_actualizacion",
         ]
@@ -78,7 +50,7 @@ class ProgramarEntrevistaSerializer(serializers.Serializer):
         ),
         required=False,
     )
-    
+
     def validate_invitados(self, value):
         """Validar que cada invitado tenga nombre y email"""
         for invitado in value:
