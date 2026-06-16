@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
+from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 import logging
 
@@ -10,6 +11,7 @@ from .models import Entrevista, Invitado
 from .serializers import EntrevistaSerializer, ProgramarEntrevistaSerializer, InvitadoSerializer
 from .tasks import enviar_emails_invitaciones_masivas
 from apps.usuarios.models import Usuario
+from apps.sesiones.models import Sesion
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +92,16 @@ class EntrevistaViewSet(ModelViewSet):
                 duracion_minutos=duracion_minutos,
             )
 
+            # Crear sesión asociada a la entrevista
+            sesion = Sesion.objects.create(
+                entrevista=entrevista,
+                creada_por=usuario,
+            )
+
             # Crear invitados con links JWT personalizados
             invitados_creados = []
             invitados_para_email = []
-            base_url = request.build_absolute_uri("/").rstrip("/")
+            base_url = settings.FRONTEND_URL.rstrip("/")
 
             for invitado_data in invitados_data:
                 nombre = invitado_data.get("nombre")
@@ -103,6 +111,8 @@ class EntrevistaViewSet(ModelViewSet):
                 refresh = RefreshToken()
                 refresh["invitado_id"] = None  # No es usuario del sistema
                 refresh["entrevista_id"] = entrevista.id
+                refresh["sesion_id"] = sesion.id
+                refresh["room_name"] = str(sesion.room_name)
                 refresh["nombre"] = nombre
                 refresh["email"] = email
                 refresh["moderator"] = False  # invitado no es moderador
@@ -142,7 +152,9 @@ class EntrevistaViewSet(ModelViewSet):
             refresh_supervisor = RefreshToken()
             refresh_supervisor["usuario_id"] = usuario.id
             refresh_supervisor["entrevista_id"] = entrevista.id
-            refresh_supervisor["nombre"] = usuario.nombre
+            refresh_supervisor["sesion_id"] = sesion.id
+            refresh_supervisor["room_name"] = str(sesion.room_name)
+            refresh_supervisor["nombre"] = usuario.get_full_name() or usuario.username
             refresh_supervisor["email"] = usuario.email
             refresh_supervisor["moderator"] = True  # supervisor es moderador
 
@@ -182,6 +194,8 @@ class EntrevistaViewSet(ModelViewSet):
             return Response(
                 {
                     "entrevista": EntrevistaSerializer(entrevista).data,
+                    "sesion_id": sesion.id,
+                    "room_name": str(sesion.room_name),
                     "invitados": invitados_creados,
                     "link_supervisor": link_supervisor,
                     "emails_encolados": emails_encolados,

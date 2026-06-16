@@ -13,6 +13,8 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
+AUTH_USER_MODEL = "usuarios.Usuario"
+
 SECRET_KEY = env("SECRET_KEY", default="dev-only-secret-key")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
@@ -154,10 +156,9 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:
 
 EMAIL_BACKEND = env(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.console.EmailBackend"
-    if DEBUG
-    else "django.core.mail.backends.smtp.EmailBackend"
+    default="django.core.mail.backends.smtp.EmailBackend",
 )
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)

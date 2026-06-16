@@ -7,7 +7,7 @@ from .models import Entrevista, Invitado, Etapa
 class EntrevistaAdmin(admin.ModelAdmin):
     list_display = ("id", "titulo", "creada_por", "evaluador", "area_entrevista", "tipo_prueba", "estado", "fecha_programada", "duracion_minutos")
     list_filter = ("estado", "tipo_prueba", "area_entrevista")
-    search_fields = ("titulo", "descripcion", "creada_por__nombre", "creada_por__email", "area_entrevista")
+    search_fields = ("titulo", "descripcion", "creada_por__first_name", "creada_por__email", "area_entrevista")
     fieldsets = (
         ("Información Básica", {
             "fields": ("titulo", "descripcion", "estado")
