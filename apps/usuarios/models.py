@@ -4,15 +4,16 @@ from django.db import models
 
 class Usuario(AbstractUser):
     class Rol(models.TextChoices):
-        SUPERVISOR = "supervisor", "Supervisor"
-        INVITADO = "invitado", "Invitado"
+        ADMIN = "admin", "Administrador"
+        RECLUTADOR = "reclutador", "Reclutador"
+        EVALUADOR = "evaluador", "Evaluador"
 
     class Estado(models.TextChoices):
         ACTIVO = "activo", "Activo"
         INACTIVO = "inactivo", "Inactivo"
 
     telefono = models.CharField(max_length=30, blank=True, null=True)
-    rol = models.CharField(max_length=30, choices=Rol.choices, default=Rol.SUPERVISOR)
+    rol = models.CharField(max_length=30, choices=Rol.choices, default=Rol.EVALUADOR)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
 
     REQUIRED_FIELDS = ["email", "first_name", "last_name"]

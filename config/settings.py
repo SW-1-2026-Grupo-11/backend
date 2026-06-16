@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "apps.usuarios",
+    "apps.candidatos",
     "apps.entrevistas",
     "apps.pruebas",
     "apps.sesiones",

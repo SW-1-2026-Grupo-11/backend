@@ -12,6 +12,7 @@ def api_root(request):
             "message": "Backend de entrevistas laborales funcionando correctamente",
             "api": {
                 "usuarios": "/api/usuarios/",
+                "candidatos": "/api/candidatos/",
                 "entrevistas": "/api/entrevistas/",
                 "pruebas": "/api/pruebas/",
                 "admin": "/admin/",
@@ -26,6 +27,7 @@ urlpatterns = [
     path("api/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/usuarios/", include("apps.usuarios.urls")),
+    path("api/candidatos/", include("apps.candidatos.urls")),
     path("api/entrevistas/", include("apps.entrevistas.urls")),
     path("api/pruebas/", include("apps.pruebas.urls")),
     path("api/sesiones/", include("apps.sesiones.urls")),
