@@ -142,7 +142,7 @@ class EntrevistaViewSet(ModelViewSet):
             refresh_supervisor = RefreshToken()
             refresh_supervisor["usuario_id"] = usuario.id
             refresh_supervisor["entrevista_id"] = entrevista.id
-            refresh_supervisor["nombre"] = usuario.nombre
+            refresh_supervisor["nombre"] = usuario.get_full_name() or usuario.username
             refresh_supervisor["email"] = usuario.email
             refresh_supervisor["moderator"] = True  # supervisor es moderador
 

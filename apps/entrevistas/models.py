@@ -88,7 +88,7 @@ class Invitado(models.Model):
         choices=[("invitado", "Invitado")],
     )
     link_token = models.CharField(max_length=500, blank=True, null=True, help_text="JWT token para generar link")
-    link_invitacion = models.URLField(blank=True, null=True, help_text="URL completa de invitación")
+    link_invitacion = models.URLField(max_length=2000, blank=True, null=True, help_text="URL completa de invitación")
     estado = models.CharField(
         max_length=30,
         default="pendiente",

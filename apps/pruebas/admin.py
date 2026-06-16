@@ -15,7 +15,7 @@ class PruebaAdmin(admin.ModelAdmin):
         "estado",
     )
     list_filter = ("tipo", "area", "nivel", "estado")
-    search_fields = ("titulo", "descripcion", "creada_por__nombre", "creada_por__email")
+    search_fields = ("titulo", "descripcion", "creada_por__first_name", "creada_por__email")
 
 
 @admin.register(PruebaEntrevista)
@@ -25,6 +25,6 @@ class PruebaEntrevistaAdmin(admin.ModelAdmin):
     search_fields = (
         "entrevista__titulo",
         "prueba__titulo",
-        "asignada_por__nombre",
+        "asignada_por__first_name",
         "asignada_por__email",
     )

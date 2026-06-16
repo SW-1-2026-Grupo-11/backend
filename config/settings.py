@@ -13,6 +13,8 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
+AUTH_USER_MODEL = "usuarios.Usuario"
+
 SECRET_KEY = env("SECRET_KEY", default="dev-only-secret-key")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
