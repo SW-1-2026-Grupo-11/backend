@@ -11,6 +11,7 @@ from django.utils import timezone
 from apps.entrevistas.models import Entrevista, Invitado
 from apps.usuarios.models import Usuario
 from apps.pruebas.models import Pregunta
+from apps.pruebas.serializers import PruebaCandidatoSerializer
 
 from .models import Sesion, Respuesta
 from .serializers import (
@@ -41,6 +42,19 @@ def _decode_invitado_token(token_str):
         return AccessToken(token_str)
     except TokenError:
         return None
+
+
+def _token_para_sesion(token, sesion):
+    """
+    True si el token del invitado corresponde a la invitación dueña de la sesión.
+    Si la sesión no tiene invitación (datos viejos), no hay nada que validar → permite.
+    """
+    inv = sesion.invitacion
+    if inv is None:
+        return True
+    invitado_id = token.get("invitado_id")
+    email = token.get("email")
+    return bool((invitado_id and inv.id == invitado_id) or (email and inv.email == email))
 
 
 class CrearObtenerSesionView(APIView):
@@ -270,7 +284,7 @@ class SesionViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=False, methods=["post"], url_path="ingresar", permission_classes=[AllowAny])
+    @action(detail=False, methods=["post"], url_path="ingresar", permission_classes=[AllowAny], authentication_classes=[])
     def ingresar(self, request):
         """
         El candidato ENTRA a su evaluación → aquí NACE su sesión (Regla de capa 3:
@@ -332,7 +346,7 @@ class SesionViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED if creada else status.HTTP_200_OK,
         )
 
-    @action(detail=True, methods=["post"], url_path="responder", permission_classes=[AllowAny])
+    @action(detail=True, methods=["post"], url_path="responder", permission_classes=[AllowAny], authentication_classes=[])
     def responder(self, request, pk=None):
         """
         El candidato envía (o actualiza) la respuesta a una pregunta de su sesión.
@@ -360,18 +374,11 @@ class SesionViewSet(ModelViewSet):
             )
 
         # El token debe corresponder a la invitación dueña de la sesión
-        inv = sesion.invitacion
-        if inv is not None:
-            invitado_id = token.get("invitado_id")
-            email = token.get("email")
-            corresponde = (invitado_id and inv.id == invitado_id) or (
-                email and inv.email == email
+        if not _token_para_sesion(token, sesion):
+            return Response(
+                {"detail": "El token no corresponde a esta sesión."},
+                status=status.HTTP_403_FORBIDDEN,
             )
-            if not corresponde:
-                return Response(
-                    {"detail": "El token no corresponde a esta sesión."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
 
         pregunta_id = request.data.get("pregunta_id")
         if not pregunta_id:
@@ -407,3 +414,66 @@ class SesionViewSet(ModelViewSet):
 
         qs = sesion.respuestas.select_related("pregunta").all()
         return Response(RespuestaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="prueba", permission_classes=[AllowAny], authentication_classes=[])
+    def prueba_candidato(self, request, pk=None):
+        """
+        Contenido de la prueba de la convocatoria para que el candidato la RINDA,
+        SIN datos de calificación (sin es_correcta / rubrica / casos_prueba).
+
+        GET /api/sesiones/{sesion_id}/prueba/   (Authorization: Bearer <jwt invitado>)
+        """
+        try:
+            sesion = Sesion.objects.get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response({"detail": "Sesión no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        token = _decode_invitado_token(_bearer_token(request) or request.query_params.get("token"))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not _token_para_sesion(token, sesion):
+            return Response(
+                {"detail": "El token no corresponde a esta sesión."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        prueba = sesion.entrevista.prueba
+        if prueba is None:
+            return Response(
+                {"detail": "La convocatoria no tiene una prueba asignada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(PruebaCandidatoSerializer(prueba).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="finalizar-candidato", permission_classes=[AllowAny], authentication_classes=[])
+    def finalizar_candidato(self, request, pk=None):
+        """
+        El candidato TERMINA su prueba → sesión finalizada + invitación completada.
+
+        POST /api/sesiones/{sesion_id}/finalizar-candidato/
+        Body: { "token": "<jwt invitado>" }
+        """
+        try:
+            sesion = Sesion.objects.get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response({"detail": "Sesión no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        token = _decode_invitado_token(request.data.get("token") or _bearer_token(request))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not _token_para_sesion(token, sesion):
+            return Response(
+                {"detail": "El token no corresponde a esta sesión."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        sesion.estado = Sesion.Estado.FINALIZADA
+        sesion.fecha_fin = timezone.now()
+        sesion.save(update_fields=["estado", "fecha_fin", "fecha_actualizacion"])
+
+        inv = sesion.invitacion
+        if inv is not None and inv.estado != "completado":
+            inv.estado = "completado"
+            inv.save(update_fields=["estado", "fecha_actualizacion"])
+
+        return Response(SesionSerializer(sesion).data, status=status.HTTP_200_OK)
