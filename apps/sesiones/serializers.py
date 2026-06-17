@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Sesion, Respuesta
+from .models import Sesion, Respuesta, RegistroAuditoria
 
 
 class RespuestaSerializer(serializers.ModelSerializer):
@@ -54,6 +54,12 @@ class RespuestaSerializer(serializers.ModelSerializer):
             if opcion is not None:
                 return opcion.texto
         return obj.contenido_texto
+
+
+class RegistroAuditoriaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegistroAuditoria
+        fields = ["id", "actor", "accion", "entidad", "entidad_id", "detalle", "timestamp"]
 
 
 class SesionSerializer(serializers.ModelSerializer):

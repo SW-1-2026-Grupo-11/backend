@@ -145,3 +145,46 @@ class Respuesta(models.Model):
 
     def __str__(self):
         return f"Respuesta sesión {self.sesion_id} - pregunta {self.pregunta_id}"
+
+
+class RegistroAuditoria(models.Model):
+    """
+    Rastro de auditoría (Capa 4c): quién hizo qué y cuándo.
+    Registra eventos clave (candidato entra/responde/finaliza, evaluador califica…)
+    para trazabilidad y defendibilidad de la evaluación.
+    """
+
+    sesion = models.ForeignKey(
+        "sesiones.Sesion",
+        on_delete=models.SET_NULL,
+        related_name="auditoria",
+        blank=True,
+        null=True,
+    )
+    usuario = models.ForeignKey(
+        "usuarios.Usuario",
+        on_delete=models.SET_NULL,
+        related_name="acciones_auditoria",
+        blank=True,
+        null=True,
+        help_text="Usuario del sistema que ejecutó la acción (si aplica).",
+    )
+    actor = models.CharField(
+        max_length=200,
+        help_text="Etiqueta legible del actor (ej: 'candidato: a@x.com', 'sistema').",
+    )
+    accion = models.CharField(max_length=100, help_text="Ej: sesion_iniciada, puntaje_manual.")
+    entidad = models.CharField(max_length=50, blank=True, null=True)
+    entidad_id = models.PositiveIntegerField(blank=True, null=True)
+    detalle = models.JSONField(blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["-timestamp"]
+        verbose_name = "Registro de auditoría"
+        verbose_name_plural = "Registros de auditoría"
+
+    def __str__(self):
+        return f"[{self.timestamp:%Y-%m-%d %H:%M}] {self.actor} · {self.accion}"

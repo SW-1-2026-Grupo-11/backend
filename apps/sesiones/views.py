@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,13 +15,33 @@ from apps.usuarios.models import Usuario
 from apps.pruebas.models import Pregunta, Opcion
 from apps.pruebas.serializers import PruebaCandidatoSerializer
 
-from .models import Sesion, Respuesta
+from .models import Sesion, Respuesta, RegistroAuditoria
 from .serializers import (
     CrearSesionSerializer,
     SesionSerializer,
     SesionDetalleSerializer,
     RespuestaSerializer,
+    RegistroAuditoriaSerializer,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def registrar(accion, actor="sistema", usuario=None, sesion=None, entidad=None, entidad_id=None, detalle=None):
+    """Registra un evento de auditoría (Capa 4c). Nunca rompe el flujo si algo falla."""
+    try:
+        RegistroAuditoria.objects.create(
+            accion=accion,
+            actor=actor,
+            usuario=usuario,
+            sesion=sesion,
+            entidad=entidad,
+            entidad_id=entidad_id,
+            detalle=detalle,
+        )
+    except Exception:
+        logger.exception("No se pudo registrar auditoría: %s", accion)
 
 
 def _bearer_token(request):
@@ -404,6 +426,13 @@ class SesionViewSet(ModelViewSet):
                 estado=Sesion.Estado.INICIADA,
             )
             creada = True
+            registrar(
+                "sesion_iniciada",
+                actor=f"candidato: {invitado.email}",
+                sesion=sesion,
+                entidad="sesion",
+                entidad_id=sesion.id,
+            )
 
         # Marcar la invitación como aceptada al entrar
         if invitado.estado == "pendiente":
@@ -467,6 +496,14 @@ class SesionViewSet(ModelViewSet):
                 "casos_pasados": request.data.get("casos_pasados"),
                 "tiempo_segundos": request.data.get("tiempo_segundos"),
             },
+        )
+        registrar(
+            "respuesta_enviada",
+            actor=f"candidato: {sesion.invitacion.email}" if sesion.invitacion else "candidato",
+            sesion=sesion,
+            entidad="respuesta",
+            entidad_id=respuesta.id,
+            detalle={"pregunta_id": pregunta.id},
         )
         return Response(RespuestaSerializer(respuesta).data, status=status.HTTP_200_OK)
 
@@ -546,6 +583,13 @@ class SesionViewSet(ModelViewSet):
             inv.estado = "completado"
             inv.save(update_fields=["estado", "fecha_actualizacion"])
 
+        registrar(
+            "sesion_finalizada",
+            actor=f"candidato: {inv.email}" if inv else "candidato",
+            sesion=sesion,
+            entidad="sesion",
+            entidad_id=sesion.id,
+        )
         return Response(SesionSerializer(sesion).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="calificar-auto")
@@ -563,6 +607,13 @@ class SesionViewSet(ModelViewSet):
 
         calificadas = _calificar_objetivas(sesion)
         _recalcular_nota(sesion)
+        registrar(
+            "calificacion_automatica",
+            actor=getattr(request.user, "username", "evaluador"),
+            usuario=request.user if request.user.is_authenticated else None,
+            sesion=sesion,
+            detalle={"calificadas_auto": calificadas},
+        )
         return Response(
             {
                 "calificadas_auto": calificadas,
@@ -620,6 +671,15 @@ class SesionViewSet(ModelViewSet):
         respuesta.puntaje_humano = valor
         respuesta.save(update_fields=["puntaje_humano"])
         _recalcular_nota(sesion)
+        registrar(
+            "puntaje_manual",
+            actor=getattr(request.user, "username", "evaluador"),
+            usuario=request.user if request.user.is_authenticated else None,
+            sesion=sesion,
+            entidad="respuesta",
+            entidad_id=respuesta.id,
+            detalle={"puntaje_humano": valor},
+        )
         return Response(
             {
                 "respuesta": RespuestaSerializer(respuesta).data,
@@ -628,3 +688,13 @@ class SesionViewSet(ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["get"], url_path="auditoria")
+    def auditoria(self, request, pk=None):
+        """Rastro de auditoría de la sesión (evaluador logueado). Capa 4c."""
+        try:
+            sesion = Sesion.objects.get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response({"detail": "Sesión no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        qs = sesion.auditoria.all()
+        return Response(RegistroAuditoriaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
