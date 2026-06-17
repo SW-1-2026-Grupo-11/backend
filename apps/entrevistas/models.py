@@ -23,6 +23,14 @@ class Entrevista(models.Model):
         blank=True,
         null=True,
     )
+    prueba = models.ForeignKey(
+        "pruebas.Prueba",
+        on_delete=models.SET_NULL,
+        related_name="convocatorias",
+        blank=True,
+        null=True,
+        help_text="Prueba (plantilla del banco) que se rinde en esta convocatoria.",
+    )
     estado = models.CharField(
         max_length=30,
         choices=Estado.choices,

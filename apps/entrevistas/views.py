@@ -12,6 +12,7 @@ from .serializers import EntrevistaSerializer, ProgramarEntrevistaSerializer, In
 from .tasks import enviar_emails_invitaciones_masivas
 from apps.usuarios.models import Usuario
 from apps.candidatos.models import Candidato
+from apps.pruebas.models import Prueba
 from apps.sesiones.models import Sesion
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class EntrevistaViewSet(ModelViewSet):
         duracion_minutos = serializer.validated_data.get("duracion_minutos", 60)
         invitados_data = serializer.validated_data.get("invitados", [])
         evaluador_id = serializer.validated_data.get("evaluador_id")
+        prueba_id = serializer.validated_data.get("prueba_id")
 
         # Obtener usuario que crea la entrevista (del request o parámetro)
         usuario = request.user if request.user.is_authenticated else None
@@ -81,6 +83,17 @@ class EntrevistaViewSet(ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+        # Obtener la prueba (plantilla del banco) si se proporciona
+        prueba = None
+        if prueba_id:
+            try:
+                prueba = Prueba.objects.get(pk=prueba_id)
+            except Prueba.DoesNotExist:
+                return Response(
+                    {"detail": "Prueba no encontrada."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         try:
             # Crear la entrevista
             entrevista = Entrevista.objects.create(
@@ -88,6 +101,7 @@ class EntrevistaViewSet(ModelViewSet):
                 descripcion=descripcion,
                 creada_por=usuario,
                 evaluador=evaluador,
+                prueba=prueba,
                 estado=Entrevista.Estado.PROGRAMADA,
                 fecha_programada=fecha_programada,
                 duracion_minutos=duracion_minutos,

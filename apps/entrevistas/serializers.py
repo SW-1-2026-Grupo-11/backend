@@ -15,6 +15,7 @@ class EntrevistaSerializer(serializers.ModelSerializer):
     invitados = InvitadoSerializer(many=True, read_only=True)
     creada_por_nombre = serializers.CharField(source="creada_por.get_full_name", read_only=True)
     evaluador_nombre = serializers.CharField(source="evaluador.get_full_name", read_only=True, allow_null=True)
+    prueba_nombre = serializers.CharField(source="prueba.titulo", read_only=True, allow_null=True)
 
     class Meta:
         model = Entrevista
@@ -26,6 +27,8 @@ class EntrevistaSerializer(serializers.ModelSerializer):
             "creada_por_nombre",
             "evaluador",
             "evaluador_nombre",
+            "prueba",
+            "prueba_nombre",
             "estado",
             "fecha_programada",
             "duracion_minutos",
@@ -41,6 +44,7 @@ class ProgramarEntrevistaSerializer(serializers.Serializer):
     titulo = serializers.CharField(max_length=150)
     descripcion = serializers.CharField(required=False, allow_blank=True)
     evaluador_id = serializers.IntegerField(required=False)
+    prueba_id = serializers.IntegerField(required=False)
     fecha_programada = serializers.DateTimeField()
     duracion_minutos = serializers.IntegerField(default=60, min_value=1)
     invitados = serializers.ListField(
