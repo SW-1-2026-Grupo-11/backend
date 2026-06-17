@@ -70,6 +70,7 @@ class SesionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "entrevista",
+            "invitacion",
             "creada_por",
             "room_name",
             "estado",

@@ -214,6 +214,13 @@ class SesionViewSet(ModelViewSet):
     queryset = Sesion.objects.all()
     serializer_class = SesionSerializer
 
+    def get_queryset(self):
+        qs = Sesion.objects.all()
+        entrevista_id = self.request.query_params.get("entrevista")
+        if entrevista_id:
+            qs = qs.filter(entrevista_id=entrevista_id)
+        return qs
+
     @action(detail=True, methods=["get"], url_path="detalle")
     def detalle_preparacion(self, request, pk=None):
         """
