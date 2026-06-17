@@ -1,6 +1,31 @@
 from rest_framework import serializers
 
-from .models import Sesion
+from .models import Sesion, Respuesta
+
+
+class RespuestaSerializer(serializers.ModelSerializer):
+    """Respuesta de un candidato a una pregunta dentro de su sesión (Capa 3)."""
+
+    pregunta_enunciado = serializers.CharField(source="pregunta.enunciado", read_only=True)
+    pregunta_formato = serializers.CharField(source="pregunta.formato", read_only=True)
+    pregunta_puntaje = serializers.IntegerField(source="pregunta.puntaje", read_only=True)
+
+    class Meta:
+        model = Respuesta
+        fields = [
+            "id",
+            "sesion",
+            "pregunta",
+            "pregunta_enunciado",
+            "pregunta_formato",
+            "pregunta_puntaje",
+            "contenido_texto",
+            "contenido_url",
+            "casos_pasados",
+            "tiempo_segundos",
+            "enviado_en",
+        ]
+        read_only_fields = ["id", "sesion", "enviado_en"]
 
 
 class SesionSerializer(serializers.ModelSerializer):

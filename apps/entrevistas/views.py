@@ -13,7 +13,6 @@ from .tasks import enviar_emails_invitaciones_masivas
 from apps.usuarios.models import Usuario
 from apps.candidatos.models import Candidato
 from apps.pruebas.models import Prueba
-from apps.sesiones.models import Sesion
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +106,9 @@ class EntrevistaViewSet(ModelViewSet):
                 duracion_minutos=duracion_minutos,
             )
 
-            # Crear sesión asociada a la entrevista
-            sesion = Sesion.objects.create(
-                entrevista=entrevista,
-                creada_por=usuario,
-            )
+            # NOTA (Capa 3): la sesión NO se crea aquí. Nace cuando el candidato
+            # ingresa (POST /api/sesiones/ingresar/). Aquí solo se programa la
+            # convocatoria y se generan las invitaciones.
 
             # Crear invitados con links JWT personalizados
             invitados_creados = []
@@ -122,12 +119,25 @@ class EntrevistaViewSet(ModelViewSet):
                 nombre = invitado_data.get("nombre")
                 email = invitado_data.get("email")
 
-                # Generar JWT para el invitado
+                # Resolver/crear la identidad reutilizable del candidato (Módulo 1/3)
+                candidato = Candidato.objects.obtener_o_crear(email=email, nombre=nombre)
+
+                # Crear la invitación primero para tener su id real en el JWT
+                invitado = Invitado.objects.create(
+                    entrevista=entrevista,
+                    candidato=candidato,
+                    nombre=nombre,
+                    email=email,
+                    rol="invitado",
+                    link_token="",
+                    link_invitacion="",
+                    estado="pendiente",
+                )
+
+                # Generar JWT del invitado (con su id real; la sesión nace al entrar)
                 refresh = RefreshToken()
-                refresh["invitado_id"] = None  # No es usuario del sistema
+                refresh["invitado_id"] = invitado.id
                 refresh["entrevista_id"] = entrevista.id
-                refresh["sesion_id"] = sesion.id
-                refresh["room_name"] = str(sesion.room_name)
                 refresh["nombre"] = nombre
                 refresh["email"] = email
                 refresh["moderator"] = False  # invitado no es moderador
@@ -135,19 +145,9 @@ class EntrevistaViewSet(ModelViewSet):
                 token_str = str(refresh.access_token)
                 link_invitacion = f"{base_url}/join?token={token_str}"
 
-                # Resolver/crear la identidad reutilizable del candidato (Módulo 1/3)
-                candidato = Candidato.objects.obtener_o_crear(email=email, nombre=nombre)
-
-                invitado = Invitado.objects.create(
-                    entrevista=entrevista,
-                    candidato=candidato,
-                    nombre=nombre,
-                    email=email,
-                    rol="invitado",
-                    link_token=token_str,
-                    link_invitacion=link_invitacion,
-                    estado="pendiente",
-                )
+                invitado.link_token = token_str
+                invitado.link_invitacion = link_invitacion
+                invitado.save(update_fields=["link_token", "link_invitacion"])
 
                 invitados_creados.append(
                     {
@@ -171,8 +171,6 @@ class EntrevistaViewSet(ModelViewSet):
             refresh_supervisor = RefreshToken()
             refresh_supervisor["usuario_id"] = usuario.id
             refresh_supervisor["entrevista_id"] = entrevista.id
-            refresh_supervisor["sesion_id"] = sesion.id
-            refresh_supervisor["room_name"] = str(sesion.room_name)
             refresh_supervisor["nombre"] = usuario.get_full_name() or usuario.username
             refresh_supervisor["email"] = usuario.email
             refresh_supervisor["moderator"] = True  # supervisor es moderador
@@ -213,8 +211,6 @@ class EntrevistaViewSet(ModelViewSet):
             return Response(
                 {
                     "entrevista": EntrevistaSerializer(entrevista).data,
-                    "sesion_id": sesion.id,
-                    "room_name": str(sesion.room_name),
                     "invitados": invitados_creados,
                     "link_supervisor": link_supervisor,
                     "emails_encolados": emails_encolados,

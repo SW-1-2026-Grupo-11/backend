@@ -6,6 +6,14 @@ class Alerta(models.Model):
         on_delete=models.CASCADE,
         related_name="alertas",
     )
+    sesion = models.ForeignKey(
+        "sesiones.Sesion",
+        on_delete=models.CASCADE,
+        related_name="alertas",
+        blank=True,
+        null=True,
+        help_text="Sesión donde se generó la alerta (Capa 3).",
+    )
     participante = models.ForeignKey(
         "usuarios.Usuario",
         on_delete=models.CASCADE,
