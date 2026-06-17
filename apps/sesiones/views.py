@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from apps.entrevistas.models import Entrevista, Invitado
 from apps.usuarios.models import Usuario
-from apps.pruebas.models import Pregunta
+from apps.pruebas.models import Pregunta, Opcion
 from apps.pruebas.serializers import PruebaCandidatoSerializer
 
 from .models import Sesion, Respuesta
@@ -55,6 +55,76 @@ def _token_para_sesion(token, sesion):
     invitado_id = token.get("invitado_id")
     email = token.get("email")
     return bool((invitado_id and inv.id == invitado_id) or (email and inv.email == email))
+
+
+def _calificar_objetivas(sesion):
+    """
+    Califica AUTOMÁTICAMENTE las respuestas objetivas (opción múltiple / V-F con
+    opciones): setea puntaje_ia comparando la opción elegida con es_correcta.
+    Las abiertas (IA) y de código (Judge0) se dejan sin tocar. Devuelve cuántas calificó.
+    """
+    objetivas = ("opcion_multiple", "verdadero_falso")
+    n = 0
+    for r in sesion.respuestas.select_related("pregunta").all():
+        preg = r.pregunta
+        if preg.formato not in objetivas:
+            continue
+        contenido = (r.contenido_texto or "").strip()
+        if not contenido.isdigit():
+            continue  # no es id de opción (ej: V/F escrito) → no auto-calificable
+        opcion = Opcion.objects.filter(pregunta=preg, pk=int(contenido)).first()
+        if opcion is None:
+            continue
+        r.puntaje_ia = preg.puntaje if opcion.es_correcta else 0
+        r.save(update_fields=["puntaje_ia"])
+        n += 1
+    return n
+
+
+def _recalcular_nota(sesion):
+    """
+    Recalcula la nota final 0-100 ponderada por sección y el estado de corrección.
+    Puntaje efectivo de cada respuesta = humano si existe, si no el de IA.
+    Una pregunta sin responder cuenta como 0.
+    """
+    prueba = sesion.entrevista.prueba
+    respuestas = {r.pregunta_id: r for r in sesion.respuestas.all()}
+
+    nota_acum = 0.0
+    peso_acum = 0
+    if prueba is not None:
+        for seccion in prueba.secciones.all():
+            preguntas = list(seccion.preguntas.all())
+            max_sec = sum(p.puntaje for p in preguntas)
+            if max_sec == 0:
+                continue
+            obt = 0.0
+            for p in preguntas:
+                r = respuestas.get(p.id)
+                if r is not None:
+                    pf = r.puntaje_humano if r.puntaje_humano is not None else r.puntaje_ia
+                    if pf is not None:
+                        obt += float(pf)
+            nota_acum += (obt / max_sec) * seccion.peso_porcentual
+            peso_acum += seccion.peso_porcentual
+
+    sesion.nota_final = round(nota_acum / peso_acum * 100, 2) if peso_acum > 0 else None
+
+    resps = list(respuestas.values())
+    con_puntaje = sum(
+        1
+        for r in resps
+        if (r.puntaje_humano if r.puntaje_humano is not None else r.puntaje_ia) is not None
+    )
+    if resps and con_puntaje == len(resps):
+        sesion.estado_correccion = Sesion.Correccion.CORREGIDA
+    elif con_puntaje > 0:
+        sesion.estado_correccion = Sesion.Correccion.PARCIAL
+    else:
+        sesion.estado_correccion = Sesion.Correccion.PENDIENTE
+
+    sesion.save(update_fields=["nota_final", "estado_correccion", "fecha_actualizacion"])
+    return sesion
 
 
 class CrearObtenerSesionView(APIView):
@@ -477,3 +547,84 @@ class SesionViewSet(ModelViewSet):
             inv.save(update_fields=["estado", "fecha_actualizacion"])
 
         return Response(SesionSerializer(sesion).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="calificar-auto")
+    def calificar_auto(self, request, pk=None):
+        """
+        Califica automáticamente las preguntas OBJETIVAS de la sesión y recalcula
+        la nota. Acción del evaluador (requiere login). Capa 4.
+
+        POST /api/sesiones/{sesion_id}/calificar-auto/
+        """
+        try:
+            sesion = Sesion.objects.get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response({"detail": "Sesión no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        calificadas = _calificar_objetivas(sesion)
+        _recalcular_nota(sesion)
+        return Response(
+            {
+                "calificadas_auto": calificadas,
+                "nota_final": sesion.nota_final,
+                "estado_correccion": sesion.estado_correccion,
+                "respuestas": RespuestaSerializer(
+                    sesion.respuestas.select_related("pregunta").all(), many=True
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="puntuar")
+    def puntuar(self, request, pk=None):
+        """
+        El evaluador fija el puntaje HUMANO de una respuesta (prevalece sobre la IA)
+        y se recalcula la nota. Acción del evaluador (requiere login). Capa 4.
+
+        POST /api/sesiones/{sesion_id}/puntuar/
+        Body: { "respuesta_id": 1, "puntaje_humano": 4 }
+        """
+        try:
+            sesion = Sesion.objects.get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response({"detail": "Sesión no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        respuesta_id = request.data.get("respuesta_id")
+        puntaje = request.data.get("puntaje_humano")
+        if respuesta_id is None or puntaje is None:
+            return Response(
+                {"detail": "Faltan 'respuesta_id' y/o 'puntaje_humano'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            respuesta = sesion.respuestas.select_related("pregunta").get(pk=respuesta_id)
+        except Respuesta.DoesNotExist:
+            return Response(
+                {"detail": "Respuesta no encontrada en esta sesión."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            valor = float(puntaje)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "'puntaje_humano' debe ser numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        maximo = float(respuesta.pregunta.puntaje)
+        if valor < 0 or valor > maximo:
+            return Response(
+                {"detail": f"El puntaje debe estar entre 0 y {maximo}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        respuesta.puntaje_humano = valor
+        respuesta.save(update_fields=["puntaje_humano"])
+        _recalcular_nota(sesion)
+        return Response(
+            {
+                "respuesta": RespuestaSerializer(respuesta).data,
+                "nota_final": sesion.nota_final,
+                "estado_correccion": sesion.estado_correccion,
+            },
+            status=status.HTTP_200_OK,
+        )

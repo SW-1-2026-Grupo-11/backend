@@ -9,6 +9,11 @@ class Sesion(models.Model):
         INICIADA = "iniciada", "Iniciada (en curso)"
         FINALIZADA = "finalizada", "Finalizada"
 
+    class Correccion(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        PARCIAL = "parcial", "Parcial"
+        CORREGIDA = "corregida", "Corregida"
+
     entrevista = models.ForeignKey(
         "entrevistas.Entrevista",
         on_delete=models.CASCADE,
@@ -42,6 +47,19 @@ class Sesion(models.Model):
         max_length=20,
         choices=Estado.choices,
         default=Estado.ACTIVA,
+    )
+    nota_final = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Nota final 0-100 (ponderada por sección). Capa 4.",
+    )
+    estado_correccion = models.CharField(
+        max_length=20,
+        choices=Correccion.choices,
+        default=Correccion.PENDIENTE,
+        help_text="Estado de la corrección de las respuestas (Capa 4).",
     )
     observaciones_internas = models.TextField(
         blank=True,
@@ -94,6 +112,26 @@ class Respuesta(models.Model):
         blank=True,
         null=True,
         help_text="Tiempo (seg) entre ver la pregunta y responder.",
+    )
+    # Calificación (Capa 4) — separada del contenido de la respuesta (regla 3)
+    puntaje_ia = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Puntaje sugerido automático (objetivas / Judge0 / IA).",
+    )
+    puntaje_humano = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Puntaje final del evaluador (prevalece sobre el de IA).",
+    )
+    feedback_ia = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Justificación de la IA al calificar.",
     )
     enviado_en = models.DateTimeField(auto_now_add=True)
 

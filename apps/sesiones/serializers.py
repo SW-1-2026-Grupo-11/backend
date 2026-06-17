@@ -9,6 +9,7 @@ class RespuestaSerializer(serializers.ModelSerializer):
     pregunta_enunciado = serializers.CharField(source="pregunta.enunciado", read_only=True)
     pregunta_formato = serializers.CharField(source="pregunta.formato", read_only=True)
     pregunta_puntaje = serializers.IntegerField(source="pregunta.puntaje", read_only=True)
+    puntaje_final = serializers.SerializerMethodField()
 
     class Meta:
         model = Respuesta
@@ -23,9 +24,25 @@ class RespuestaSerializer(serializers.ModelSerializer):
             "contenido_url",
             "casos_pasados",
             "tiempo_segundos",
+            "puntaje_ia",
+            "puntaje_humano",
+            "feedback_ia",
+            "puntaje_final",
             "enviado_en",
         ]
-        read_only_fields = ["id", "sesion", "enviado_en"]
+        read_only_fields = [
+            "id",
+            "sesion",
+            "enviado_en",
+            "puntaje_ia",
+            "puntaje_humano",
+            "feedback_ia",
+        ]
+
+    def get_puntaje_final(self, obj):
+        """Lo que vale la respuesta: el puntaje humano si existe, si no el de la IA."""
+        valor = obj.puntaje_humano if obj.puntaje_humano is not None else obj.puntaje_ia
+        return float(valor) if valor is not None else None
 
 
 class SesionSerializer(serializers.ModelSerializer):
@@ -39,6 +56,8 @@ class SesionSerializer(serializers.ModelSerializer):
             "creada_por",
             "room_name",
             "estado",
+            "nota_final",
+            "estado_correccion",
             "observaciones_internas",
             "fecha_inicio",
             "fecha_fin",
@@ -73,6 +92,8 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "id",
             "room_name",
             "estado",
+            "nota_final",
+            "estado_correccion",
             "titulo_entrevista",
             "descripcion_entrevista",
             "evaluador_nombre",
