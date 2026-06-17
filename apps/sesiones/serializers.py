@@ -10,6 +10,7 @@ class RespuestaSerializer(serializers.ModelSerializer):
     pregunta_formato = serializers.CharField(source="pregunta.formato", read_only=True)
     pregunta_puntaje = serializers.IntegerField(source="pregunta.puntaje", read_only=True)
     puntaje_final = serializers.SerializerMethodField()
+    respuesta_legible = serializers.SerializerMethodField()
 
     class Meta:
         model = Respuesta
@@ -21,6 +22,7 @@ class RespuestaSerializer(serializers.ModelSerializer):
             "pregunta_formato",
             "pregunta_puntaje",
             "contenido_texto",
+            "respuesta_legible",
             "contenido_url",
             "casos_pasados",
             "tiempo_segundos",
@@ -43,6 +45,15 @@ class RespuestaSerializer(serializers.ModelSerializer):
         """Lo que vale la respuesta: el puntaje humano si existe, si no el de la IA."""
         valor = obj.puntaje_humano if obj.puntaje_humano is not None else obj.puntaje_ia
         return float(valor) if valor is not None else None
+
+    def get_respuesta_legible(self, obj):
+        """Texto legible: si el candidato eligió una opción, su texto; si no, el contenido."""
+        contenido = obj.contenido_texto or ""
+        if contenido.isdigit():
+            opcion = obj.pregunta.opciones.filter(pk=int(contenido)).first()
+            if opcion is not None:
+                return opcion.texto
+        return obj.contenido_texto
 
 
 class SesionSerializer(serializers.ModelSerializer):
