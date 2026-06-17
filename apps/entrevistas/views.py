@@ -236,6 +236,13 @@ class InvitadoViewSet(ModelViewSet):
     """ViewSet para gestionar invitados de entrevistas"""
     queryset = Invitado.objects.all()
     serializer_class = InvitadoSerializer
+
+    def get_queryset(self):
+        qs = Invitado.objects.all()
+        entrevista_id = self.request.query_params.get("entrevista")
+        if entrevista_id:
+            qs = qs.filter(entrevista_id=entrevista_id)
+        return qs
     
     def destroy(self, request, *args, **kwargs):
         """

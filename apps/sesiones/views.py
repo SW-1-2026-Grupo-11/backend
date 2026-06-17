@@ -452,6 +452,61 @@ class SesionViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED if creada else status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["post"], url_path="rendir", permission_classes=[AllowAny], authentication_classes=[])
+    def rendir(self, request):
+        """
+        TODO-EN-UNO para el candidato (Capa 3c, versión simple): con el token,
+        crea/recupera su sesión Y devuelve la prueba (sin respuestas correctas),
+        en UNA sola respuesta. Así el front hace un único fetch y muestra todo.
+
+        POST /api/sesiones/rendir/   Body: { "token": "<jwt invitado>" }
+        → { "sesion": {...}, "prueba": {...} | null }
+        """
+        token = _decode_invitado_token(request.data.get("token") or _bearer_token(request))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        entrevista_id = token.get("entrevista_id")
+        invitado_id = token.get("invitado_id")
+        email = token.get("email")
+        invitado = None
+        if invitado_id:
+            invitado = Invitado.objects.filter(pk=invitado_id).first()
+        if invitado is None and entrevista_id and email:
+            invitado = Invitado.objects.filter(entrevista_id=entrevista_id, email=email).first()
+        if invitado is None:
+            return Response({"detail": "Invitación no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        entrevista = invitado.entrevista
+        sesion = Sesion.objects.filter(invitacion=invitado).first()
+        if sesion is None:
+            sesion = Sesion.objects.create(
+                entrevista=entrevista,
+                creada_por=entrevista.creada_por,
+                invitacion=invitado,
+                estado=Sesion.Estado.INICIADA,
+            )
+            registrar(
+                "sesion_iniciada",
+                actor=f"candidato: {invitado.email}",
+                sesion=sesion,
+                entidad="sesion",
+                entidad_id=sesion.id,
+            )
+        if invitado.estado == "pendiente":
+            invitado.estado = "aceptado"
+            invitado.fecha_aceptacion = timezone.now()
+            invitado.save(update_fields=["estado", "fecha_aceptacion", "fecha_actualizacion"])
+
+        prueba = entrevista.prueba
+        return Response(
+            {
+                "sesion": SesionSerializer(sesion).data,
+                "prueba": PruebaCandidatoSerializer(prueba).data if prueba is not None else None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=True, methods=["post"], url_path="responder", permission_classes=[AllowAny], authentication_classes=[])
     def responder(self, request, pk=None):
         """
