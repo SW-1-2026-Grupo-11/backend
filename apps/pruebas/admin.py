@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Opcion, Pregunta, Prueba, PruebaEntrevista, Seccion
+from .models import Opcion, Pregunta, Prueba, Seccion
 
 
 class PreguntaInline(admin.TabularInline):
@@ -49,15 +49,3 @@ class OpcionAdmin(admin.ModelAdmin):
     list_display = ("id", "pregunta", "texto", "es_correcta", "orden")
     list_filter = ("es_correcta",)
     search_fields = ("texto",)
-
-
-@admin.register(PruebaEntrevista)
-class PruebaEntrevistaAdmin(admin.ModelAdmin):
-    list_display = ("id", "entrevista", "prueba", "asignada_por", "estado")
-    list_filter = ("estado",)
-    search_fields = (
-        "entrevista__titulo",
-        "prueba__titulo",
-        "asignada_por__first_name",
-        "asignada_por__email",
-    )

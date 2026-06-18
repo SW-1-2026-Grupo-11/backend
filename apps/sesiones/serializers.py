@@ -84,11 +84,6 @@ class SesionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "room_name", "fecha_inicio", "fecha_actualizacion"]
 
 
-class CrearSesionSerializer(serializers.Serializer):
-    entrevista_id = serializers.IntegerField()
-    creada_por = serializers.IntegerField()
-
-
 class SesionDetalleSerializer(serializers.ModelSerializer):
     """Serializer con datos completos: sesión, entrevista e invitados"""
     room_name = serializers.UUIDField(read_only=True)

@@ -1,10 +1,9 @@
 from rest_framework.viewsets import ModelViewSet
 
-from .models import Opcion, Pregunta, Prueba, PruebaEntrevista, Seccion
+from .models import Opcion, Pregunta, Prueba, Seccion
 from .serializers import (
     OpcionSerializer,
     PreguntaSerializer,
-    PruebaEntrevistaSerializer,
     PruebaSerializer,
     SeccionSerializer,
 )
@@ -13,11 +12,6 @@ from .serializers import (
 class PruebaViewSet(ModelViewSet):
     queryset = Prueba.objects.all()
     serializer_class = PruebaSerializer
-
-
-class PruebaEntrevistaViewSet(ModelViewSet):
-    queryset = PruebaEntrevista.objects.all()
-    serializer_class = PruebaEntrevistaSerializer
 
 
 class SeccionViewSet(ModelViewSet):
