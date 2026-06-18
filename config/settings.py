@@ -141,6 +141,12 @@ SIMPLE_JWT = {
 JITSI_DOMAIN = env("JITSI_DOMAIN", default="meet.jit.si")
 JITSI_ROOM_PREFIX = env("JITSI_ROOM_PREFIX", default="video_jitsi")
 
+# JWT para Jitsi self-hosted (prosody token auth). El MISMO secreto debe estar
+# en prosody (JWT_APP_SECRET). En la pública (meet.jit.si) no se usa.
+JITSI_JWT_APP_ID = env("JITSI_JWT_APP_ID", default="evalsecure")
+JITSI_JWT_APP_SECRET = env("JITSI_JWT_APP_SECRET", default="dev-jitsi-secret-change-me")
+JITSI_XMPP_DOMAIN = env("JITSI_XMPP_DOMAIN", default="meet.jitsi")
+
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
 

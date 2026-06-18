@@ -1,5 +1,8 @@
 import logging
+import time
+from datetime import timedelta
 
+import jwt as pyjwt
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -8,6 +11,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import TokenError
 from django.utils import timezone
+from django.conf import settings
 
 from apps.entrevistas.models import Invitado
 from apps.pruebas.models import Pregunta, Opcion
@@ -146,6 +150,41 @@ def _recalcular_nota(sesion):
     return sesion
 
 
+def _firmar_jwt_jitsi(room, nombre, email, moderator, exp_ts):
+    """
+    Firma un JWT para un Jitsi self-hosted (prosody token auth). El mismo secreto
+    (JITSI_JWT_APP_SECRET) debe estar en prosody. El flag moderator va en
+    context.user (es donde el plugin de Jitsi lo lee), no como claim suelto.
+    """
+    payload = {
+        "iss": settings.JITSI_JWT_APP_ID,
+        "aud": settings.JITSI_JWT_APP_ID,
+        "sub": settings.JITSI_XMPP_DOMAIN,
+        "room": room,
+        "exp": int(exp_ts),
+        "context": {
+            "user": {
+                "name": nombre or "",
+                "email": email or "",
+                "moderator": "true" if moderator else "false",
+            }
+        },
+    }
+    return pyjwt.encode(payload, settings.JITSI_JWT_APP_SECRET, algorithm="HS256")
+
+
+def _exp_para_invitado(invitado_id):
+    """exp del JWT de Jitsi: cubre la cita (fecha + duración) con margen; mínimo 6h."""
+    exp_ts = time.time() + 6 * 3600
+    inv = Invitado.objects.filter(pk=invitado_id).first() if invitado_id else None
+    if inv and inv.entrevista.fecha_programada:
+        fin = inv.entrevista.fecha_programada + timedelta(
+            minutes=(inv.entrevista.duracion_minutos or 60) + 60
+        )
+        exp_ts = max(exp_ts, fin.timestamp())
+    return exp_ts
+
+
 class SesionViewSet(ModelViewSet):
     """ViewSet para gestionar sesiones con endpoints adicionales"""
     queryset = Sesion.objects.all()
@@ -158,7 +197,7 @@ class SesionViewSet(ModelViewSet):
             qs = qs.filter(entrevista_id=entrevista_id)
         return qs
 
-    @action(detail=True, methods=["get"], url_path="detalle")
+    @action(detail=True, methods=["get"], url_path="detalle", permission_classes=[AllowAny], authentication_classes=[])
     def detalle_preparacion(self, request, pk=None):
         """
         Obtiene datos completos de la sesión para la sala de preparación.
@@ -372,6 +411,48 @@ class SesionViewSet(ModelViewSet):
                 "sesion": SesionSerializer(sesion).data,
                 "prueba": PruebaCandidatoSerializer(prueba).data if prueba is not None else None,
             },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="jitsi-token", permission_classes=[AllowAny], authentication_classes=[])
+    def jitsi_token(self, request):
+        """
+        Firma el JWT para entrar a la sala de Jitsi self-hosted. (En la pública
+        meet.jit.si no se usa; el front solo lo pide si el dominio es propio.)
+
+        POST /api/sesiones/jitsi-token/
+        Body: { "token": "<jwt app>", "watch": <invitado_id> (solo supervisor) }
+          - candidato  → sala inv-<su invitado_id>, moderator=false
+          - supervisor → sala inv-<watch>,          moderator=true
+        → { "jwt": "...", "room": "inv-5", "domain": "<JITSI_DOMAIN>" }
+        """
+        token = _decode_invitado_token(request.data.get("token") or _bearer_token(request))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        es_moderador = bool(token.get("moderator"))
+        if es_moderador:
+            invitado_ref = request.data.get("watch")
+            if not invitado_ref:
+                return Response(
+                    {"detail": "Falta 'watch' (invitado a supervisar)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            invitado_ref = token.get("invitado_id")
+            if not invitado_ref:
+                return Response({"detail": "Token sin invitado_id."}, status=status.HTTP_400_BAD_REQUEST)
+
+        room = f"inv-{invitado_ref}"
+        jwt_str = _firmar_jwt_jitsi(
+            room=room,
+            nombre=token.get("nombre"),
+            email=token.get("email"),
+            moderator=es_moderador,
+            exp_ts=_exp_para_invitado(invitado_ref),
+        )
+        return Response(
+            {"jwt": jwt_str, "room": room, "domain": settings.JITSI_DOMAIN},
             status=status.HTTP_200_OK,
         )
 
