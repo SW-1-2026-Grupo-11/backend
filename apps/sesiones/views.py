@@ -202,7 +202,7 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        nuevo_estado = request.data.get("estado")
+        nuevo_estado = request.data.get("nuevo_estado")
         if nuevo_estado not in dict(Sesion.Estado.choices).keys():
             return Response(
                 {"detail": f"Estado inválido. Opciones: {list(dict(Sesion.Estado.choices).keys())}"},
@@ -237,7 +237,7 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        observaciones = request.data.get("observaciones_internas", "")
+        observaciones = request.data.get("observaciones", "")
         sesion.observaciones_internas = observaciones
         sesion.save()
 
