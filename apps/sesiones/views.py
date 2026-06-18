@@ -167,6 +167,9 @@ def _firmar_jwt_jitsi(room, nombre, email, moderator, exp_ts):
                 "name": nombre or "",
                 "email": email or "",
                 "moderator": "true" if moderator else "false",
+                # token_affiliation (prosody) lee esto y otorga el rol REAL:
+                # owner = moderador (supervisor), member = participante (candidato).
+                "affiliation": "owner" if moderator else "member",
             }
         },
     }
