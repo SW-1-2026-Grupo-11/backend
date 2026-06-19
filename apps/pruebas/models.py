@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator
 from django.db import models
 
 
@@ -88,6 +89,7 @@ class Seccion(models.Model):
     orden = models.PositiveIntegerField(default=1)
     peso_porcentual = models.PositiveIntegerField(
         default=100,
+        validators=[MaxValueValidator(100)],
         help_text="Peso de la sección en la nota final (0-100).",
     )
     fecha_creacion = models.DateTimeField(auto_now_add=True)

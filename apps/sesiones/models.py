@@ -31,7 +31,8 @@ class Sesion(models.Model):
         related_name="sesiones",
         blank=True,
         null=True,
-        help_text="Invitación del candidato (1 sesión por invitación). Capa 3.",
+        unique=True,
+        help_text="Invitación del candidato (1 sesión por invitación, única). Capa 3.",
     )
     identidad_verificada = models.BooleanField(
         default=False,

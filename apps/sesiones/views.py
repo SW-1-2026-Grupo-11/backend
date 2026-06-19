@@ -139,7 +139,12 @@ def _recalcular_nota(sesion):
         for r in resps
         if (r.puntaje_humano if r.puntaje_humano is not None else r.puntaje_ia) is not None
     )
-    if resps and con_puntaje == len(resps):
+    # "Corregida" solo si TODAS las preguntas de la prueba tienen puntaje (no solo
+    # las respondidas): una pregunta sin responder/calificar deja la sesión PARCIAL.
+    total_preguntas = (
+        sum(s.preguntas.count() for s in prueba.secciones.all()) if prueba is not None else 0
+    )
+    if total_preguntas and con_puntaje >= total_preguntas:
         sesion.estado_correccion = Sesion.Correccion.CORREGIDA
     elif con_puntaje > 0:
         sesion.estado_correccion = Sesion.Correccion.PARCIAL
@@ -388,14 +393,17 @@ class SesionViewSet(ModelViewSet):
             return Response({"detail": "Invitación no encontrada."}, status=status.HTTP_404_NOT_FOUND)
 
         entrevista = invitado.entrevista
-        sesion = Sesion.objects.filter(invitacion=invitado).first()
-        if sesion is None:
-            sesion = Sesion.objects.create(
-                entrevista=entrevista,
-                creada_por=entrevista.creada_por,
-                invitacion=invitado,
-                estado=Sesion.Estado.INICIADA,
-            )
+        # get_or_create + unique en invitacion = idempotente y a prueba de carrera
+        # (2 pestañas casi simultáneas ya no crean 2 sesiones).
+        sesion, creada = Sesion.objects.get_or_create(
+            invitacion=invitado,
+            defaults={
+                "entrevista": entrevista,
+                "creada_por": entrevista.creada_por,
+                "estado": Sesion.Estado.INICIADA,
+            },
+        )
+        if creada:
             registrar(
                 "sesion_iniciada",
                 actor=f"candidato: {invitado.email}",
@@ -493,13 +501,26 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # No se puede responder una sesión ya finalizada (entregada).
+        if sesion.estado == Sesion.Estado.FINALIZADA:
+            return Response(
+                {"detail": "La sesión ya está finalizada."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         pregunta_id = request.data.get("pregunta_id")
         if not pregunta_id:
             return Response({"detail": "Falta pregunta_id."}, status=status.HTTP_400_BAD_REQUEST)
+        # La pregunta debe pertenecer a la prueba de la convocatoria de esta sesión.
         try:
-            pregunta = Pregunta.objects.get(pk=pregunta_id)
+            pregunta = Pregunta.objects.get(
+                pk=pregunta_id, seccion__prueba=sesion.entrevista.prueba
+            )
         except Pregunta.DoesNotExist:
-            return Response({"detail": "Pregunta no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Pregunta no encontrada o no pertenece a esta prueba."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         respuesta, _creada = Respuesta.objects.update_or_create(
             sesion=sesion,

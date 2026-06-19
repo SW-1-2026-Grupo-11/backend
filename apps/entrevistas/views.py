@@ -5,6 +5,8 @@ from rest_framework import status
 from django.utils import timezone
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db import transaction, IntegrityError
+from datetime import timedelta
 import logging
 
 from .models import Entrevista, Invitado
@@ -22,6 +24,7 @@ class EntrevistaViewSet(ModelViewSet):
     serializer_class = EntrevistaSerializer
 
     @action(detail=False, methods=["post"], url_path="programar")
+    @transaction.atomic
     def programar_entrevista(self, request):
         """
         Programa una entrevista con invitados y envía emails automáticamente.
@@ -93,6 +96,23 @@ class EntrevistaViewSet(ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+        # exp de los links atado a la cita (fecha + duración + 2h); solo extiende
+        # más allá del default (24h) si la entrevista es lejana.
+        exp_extra = None
+        if fecha_programada:
+            fin = fecha_programada + timedelta(minutes=(duracion_minutos or 60) + 120)
+            delta = fin - timezone.now()
+            if delta > timedelta(hours=24):
+                exp_extra = delta
+
+        # Emails repetidos chocarían el unique_together(entrevista, email).
+        _emails = [i.get("email") for i in invitados_data]
+        if len(_emails) != len(set(_emails)):
+            return Response(
+                {"detail": "Hay emails repetidos en la lista de invitados."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             # Crear la entrevista
             entrevista = Entrevista.objects.create(
@@ -142,7 +162,10 @@ class EntrevistaViewSet(ModelViewSet):
                 refresh["email"] = email
                 refresh["moderator"] = False  # invitado no es moderador
 
-                token_str = str(refresh.access_token)
+                access = refresh.access_token
+                if exp_extra:
+                    access.set_exp(lifetime=exp_extra)
+                token_str = str(access)
                 link_invitacion = f"{base_url}/join?token={token_str}"
 
                 invitado.link_token = token_str
@@ -175,7 +198,10 @@ class EntrevistaViewSet(ModelViewSet):
             refresh_supervisor["email"] = usuario.email
             refresh_supervisor["moderator"] = True  # supervisor es moderador
 
-            token_supervisor = str(refresh_supervisor.access_token)
+            access_sup = refresh_supervisor.access_token
+            if exp_extra:
+                access_sup.set_exp(lifetime=exp_extra)
+            token_supervisor = str(access_sup)
             link_supervisor = f"{base_url}/join?token={token_supervisor}"
 
             # Encolar tareas de envío de email (asincrónico con Celery)
@@ -189,15 +215,18 @@ class EntrevistaViewSet(ModelViewSet):
                         else str(fecha_programada)
                     )
                     
-                    # Encolar tarea masiva de emails
-                    enviar_emails_invitaciones_masivas.delay(
-                        entrevista_id=entrevista.id,
-                        invitados=invitados_para_email,
-                        titulo_entrevista=titulo,
-                        descripcion=descripcion,
-                        evaluador_nombre=evaluador.get_full_name() if evaluador else usuario.get_full_name(),
-                        fecha_programada=fecha_str,
-                        duracion_minutos=duracion_minutos,
+                    # Encolar DESPUÉS del commit: evita que el worker de Celery
+                    # lea datos que la transacción todavía no confirmó.
+                    transaction.on_commit(
+                        lambda: enviar_emails_invitaciones_masivas.delay(
+                            entrevista_id=entrevista.id,
+                            invitados=invitados_para_email,
+                            titulo_entrevista=titulo,
+                            descripcion=descripcion,
+                            evaluador_nombre=evaluador.get_full_name() if evaluador else usuario.get_full_name(),
+                            fecha_programada=fecha_str,
+                            duracion_minutos=duracion_minutos,
+                        )
                     )
                     emails_encolados = True
                     logger.info(
@@ -224,7 +253,14 @@ class EntrevistaViewSet(ModelViewSet):
                 status=status.HTTP_201_CREATED,
             )
 
+        except IntegrityError:
+            transaction.set_rollback(True)
+            return Response(
+                {"detail": "Conflicto al crear invitados (posible email duplicado)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
+            transaction.set_rollback(True)
             logger.error(f"Error creando entrevista: {str(e)}")
             return Response(
                 {"detail": f"Error al crear la entrevista: {str(e)}"},
@@ -236,6 +272,7 @@ class InvitadoViewSet(ModelViewSet):
     """ViewSet para gestionar invitados de entrevistas"""
     queryset = Invitado.objects.all()
     serializer_class = InvitadoSerializer
+    pagination_class = None  # devolver TODOS los invitados (no paginar de a 20)
 
     def get_queryset(self):
         qs = Invitado.objects.all()

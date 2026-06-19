@@ -10,10 +10,14 @@ class CandidatoManager(models.Manager):
         flujos (p. ej. las invitaciones) para no duplicar candidatos al cargar
         emails. La lógica del candidato vive acá, en su propia app.
         """
-        candidato, _creado = self.get_or_create(
+        candidato, creado = self.get_or_create(
             email=email,
             defaults={"nombre": nombre, **extra},
         )
+        # Si ya existía y el nombre cambió, lo actualizamos (identidad al día).
+        if not creado and nombre and candidato.nombre != nombre:
+            candidato.nombre = nombre
+            candidato.save(update_fields=["nombre", "fecha_actualizacion"])
         return candidato
 
 
