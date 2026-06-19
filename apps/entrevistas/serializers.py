@@ -1,7 +1,38 @@
+from datetime import timedelta
+
+from django.conf import settings
+from django.utils import timezone
 from rest_framework import serializers
+
 from .models import Entrevista, Invitado
 
 # este es el serializer de la app entrevistas
+
+
+def _estado_efectivo(entrevista):
+    """
+    Estado REAL de la convocatoria. Los estados manuales (borrador/cancelada)
+    mandan; el resto se DERIVA del tiempo (programada → en_proceso → finalizada).
+    Así el front muestra la verdad sin un selector libre que ponga estados a dedo.
+    """
+    manual = (Entrevista.Estado.BORRADOR, Entrevista.Estado.CANCELADA)
+    if entrevista.estado in manual:
+        return entrevista.estado
+    fp = entrevista.fecha_programada
+    if fp is None:
+        return entrevista.estado
+    ahora = timezone.now()
+    dur = entrevista.duracion_minutos
+    if not dur and entrevista.prueba is not None:
+        dur = entrevista.prueba.duracion_minutos
+    dur = dur or 60
+    gracia = getattr(settings, "GRACIA_INICIO_MIN", 15)
+    fin = fp + timedelta(minutes=dur + gracia)
+    if ahora < fp:
+        return Entrevista.Estado.PROGRAMADA
+    if ahora <= fin:
+        return Entrevista.Estado.EN_PROCESO
+    return Entrevista.Estado.FINALIZADA
 
 
 class InvitadoSerializer(serializers.ModelSerializer):
@@ -16,6 +47,9 @@ class EntrevistaSerializer(serializers.ModelSerializer):
     creada_por_nombre = serializers.CharField(source="creada_por.get_full_name", read_only=True)
     evaluador_nombre = serializers.CharField(source="evaluador.get_full_name", read_only=True, allow_null=True)
     prueba_nombre = serializers.CharField(source="prueba.titulo", read_only=True, allow_null=True)
+    # Estado derivado del tiempo (lo que el front debe mostrar). El campo `estado`
+    # crudo queda solo para las transiciones manuales (borrador/cancelada).
+    estado_efectivo = serializers.SerializerMethodField()
 
     class Meta:
         model = Entrevista
@@ -30,6 +64,7 @@ class EntrevistaSerializer(serializers.ModelSerializer):
             "prueba",
             "prueba_nombre",
             "estado",
+            "estado_efectivo",
             "fecha_programada",
             "duracion_minutos",
             "invitados",
@@ -37,6 +72,9 @@ class EntrevistaSerializer(serializers.ModelSerializer):
             "fecha_actualizacion",
         ]
         read_only_fields = ["id", "fecha_creacion", "fecha_actualizacion"]
+
+    def get_estado_efectivo(self, obj):
+        return _estado_efectivo(obj)
 
 
 class ProgramarEntrevistaSerializer(serializers.Serializer):
@@ -46,7 +84,8 @@ class ProgramarEntrevistaSerializer(serializers.Serializer):
     evaluador_id = serializers.IntegerField(required=False)
     prueba_id = serializers.IntegerField(required=False)
     fecha_programada = serializers.DateTimeField()
-    duracion_minutos = serializers.IntegerField(default=60, min_value=1)
+    # OPCIONAL: si no se envía, la convocatoria hereda la duración de la prueba.
+    duracion_minutos = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     invitados = serializers.ListField(
         child=serializers.DictField(
             child=serializers.CharField(),

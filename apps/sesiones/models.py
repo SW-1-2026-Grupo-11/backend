@@ -1,6 +1,8 @@
 import uuid
+from datetime import timedelta
 
 from django.db import models
+from django.utils import timezone
 
 
 class Sesion(models.Model):
@@ -13,6 +15,11 @@ class Sesion(models.Model):
         PENDIENTE = "pendiente", "Pendiente"
         PARCIAL = "parcial", "Parcial"
         CORREGIDA = "corregida", "Corregida"
+
+    class MotivoCierre(models.TextChoices):
+        ENTREGADA = "entregada", "Entregada por el candidato"
+        VENCIDA = "vencida", "Vencida por tiempo"
+        TERMINADA = "terminada", "Terminada por el supervisor"
 
     entrevista = models.ForeignKey(
         "entrevistas.Entrevista",
@@ -62,6 +69,13 @@ class Sesion(models.Model):
         default=Correccion.PENDIENTE,
         help_text="Estado de la corrección de las respuestas (Capa 4).",
     )
+    motivo_cierre = models.CharField(
+        max_length=20,
+        choices=MotivoCierre.choices,
+        blank=True,
+        null=True,
+        help_text="Cómo terminó la sesión: entregada / vencida / terminada (para el Informe).",
+    )
     observaciones_internas = models.TextField(
         blank=True,
         null=True,
@@ -75,6 +89,32 @@ class Sesion(models.Model):
         ordering = ["-fecha_inicio"]
         verbose_name = "Sesión"
         verbose_name_plural = "Sesiones"
+
+    @property
+    def duracion_efectiva_minutos(self):
+        """
+        Tiempo límite real (minutos). La PRUEBA es la fuente de verdad; la
+        convocatoria puede sobrescribirlo (override opcional). Fallback: 60.
+        """
+        ent = self.entrevista
+        if ent is None:
+            return 60
+        if ent.duracion_minutos:  # override de la convocatoria
+            return ent.duracion_minutos
+        prueba = ent.prueba
+        if prueba is not None and prueba.duracion_minutos:
+            return prueba.duracion_minutos
+        return 60
+
+    @property
+    def deadline(self):
+        """Momento límite de entrega = inicio del candidato + duración efectiva."""
+        return self.fecha_inicio + timedelta(minutes=self.duracion_efectiva_minutos)
+
+    @property
+    def esta_vencida(self):
+        """True si está en curso pero ya pasó su deadline (se debe cerrar por tiempo)."""
+        return self.estado == self.Estado.INICIADA and timezone.now() > self.deadline
 
     def __str__(self):
         return f"Sesión {self.room_name} - {self.entrevista}"

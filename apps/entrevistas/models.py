@@ -38,7 +38,13 @@ class Entrevista(models.Model):
     )
     fecha_programada = models.DateTimeField(blank=True, null=True)
     duracion_minutos = models.PositiveIntegerField(
-        default=60, help_text="Duración de la entrevista en minutos"
+        blank=True,
+        null=True,
+        help_text=(
+            "Override OPCIONAL de la duración. Si está vacío, se usa la duración "
+            "de la prueba (fuente de verdad). Solo se llena para dar más/menos "
+            "tiempo a esta convocatoria en particular."
+        ),
     )
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)

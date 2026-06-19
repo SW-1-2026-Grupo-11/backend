@@ -61,7 +61,8 @@ class EntrevistaViewSet(ModelViewSet):
         titulo = serializer.validated_data.get("titulo")
         descripcion = serializer.validated_data.get("descripcion", "")
         fecha_programada = serializer.validated_data.get("fecha_programada")
-        duracion_minutos = serializer.validated_data.get("duracion_minutos", 60)
+        # Override OPCIONAL: None = hereda la duración de la prueba (se resuelve abajo).
+        duracion_minutos = serializer.validated_data.get("duracion_minutos")
         invitados_data = serializer.validated_data.get("invitados", [])
         evaluador_id = serializer.validated_data.get("evaluador_id")
         prueba_id = serializer.validated_data.get("prueba_id")
@@ -96,11 +97,15 @@ class EntrevistaViewSet(ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+        # Duración efectiva (para exp de links y email): override o, si no, la de la
+        # prueba. La convocatoria se guarda con duracion_minutos=None si se heredó.
+        duracion_efectiva = duracion_minutos or (prueba.duracion_minutos if prueba else 60)
+
         # exp de los links atado a la cita (fecha + duración + 2h); solo extiende
         # más allá del default (24h) si la entrevista es lejana.
         exp_extra = None
         if fecha_programada:
-            fin = fecha_programada + timedelta(minutes=(duracion_minutos or 60) + 120)
+            fin = fecha_programada + timedelta(minutes=duracion_efectiva + 120)
             delta = fin - timezone.now()
             if delta > timedelta(hours=24):
                 exp_extra = delta
@@ -225,7 +230,7 @@ class EntrevistaViewSet(ModelViewSet):
                             descripcion=descripcion,
                             evaluador_nombre=evaluador.get_full_name() if evaluador else usuario.get_full_name(),
                             fecha_programada=fecha_str,
-                            duracion_minutos=duracion_minutos,
+                            duracion_minutos=duracion_efectiva,
                         )
                     )
                     emails_encolados = True
@@ -266,6 +271,22 @@ class EntrevistaViewSet(ModelViewSet):
                 {"detail": f"Error al crear la entrevista: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    @action(detail=True, methods=["post"], url_path="cancelar")
+    def cancelar(self, request, pk=None):
+        """
+        Cancela la convocatoria (decisión manual del reclutador). Es la única
+        transición de estado "a mano" que tiene sentido — el resto se deriva del
+        tiempo. Una vez cancelada, los candidatos no pueden ingresar.
+
+        POST /api/entrevistas/entrevistas/{id}/cancelar/
+        """
+        entrevista = self.get_object()
+        if entrevista.estado != Entrevista.Estado.CANCELADA:
+            entrevista.estado = Entrevista.Estado.CANCELADA
+            entrevista.save(update_fields=["estado", "fecha_actualizacion"])
+            logger.info(f"✓ Convocatoria {entrevista.id} cancelada")
+        return Response(EntrevistaSerializer(entrevista).data, status=status.HTTP_200_OK)
 
 
 class InvitadoViewSet(ModelViewSet):

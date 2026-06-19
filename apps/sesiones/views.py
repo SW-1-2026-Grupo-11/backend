@@ -80,6 +80,34 @@ def _token_para_sesion(token, sesion):
     return bool((invitado_id and inv.id == invitado_id) or (email and inv.email == email))
 
 
+def _cerrar_si_vencida(sesion):
+    """
+    Cierre LAZY de sesiones vencidas: si la sesión sigue 'iniciada' pero ya pasó
+    su deadline (el candidato se fue sin entregar), la marca finalizada por tiempo.
+    Así el servidor cierra solo lo que el navegador del candidato no cerró.
+    Se llama al LEER la sesión (lista/detalle) y al intentar responder.
+    """
+    if not sesion.esta_vencida:
+        return sesion
+    sesion.estado = Sesion.Estado.FINALIZADA
+    sesion.fecha_fin = sesion.deadline
+    sesion.motivo_cierre = Sesion.MotivoCierre.VENCIDA
+    sesion.save(update_fields=["estado", "fecha_fin", "motivo_cierre", "fecha_actualizacion"])
+    inv = sesion.invitacion
+    if inv is not None and inv.estado != "completado":
+        inv.estado = "completado"
+        inv.save(update_fields=["estado", "fecha_actualizacion"])
+    registrar(
+        "sesion_finalizada",
+        actor="sistema (tiempo agotado)",
+        sesion=sesion,
+        entidad="sesion",
+        entidad_id=sesion.id,
+        detalle={"motivo": "vencida"},
+    )
+    return sesion
+
+
 def _calificar_objetivas(sesion):
     """
     Califica AUTOMÁTICAMENTE las respuestas objetivas (opción múltiple / V-F con
@@ -205,6 +233,19 @@ class SesionViewSet(ModelViewSet):
             qs = qs.filter(entrevista_id=entrevista_id)
         return qs
 
+    def list(self, request, *args, **kwargs):
+        # Cierre lazy: las "iniciadas" que ya vencieron se marcan finalizadas antes
+        # de serializar, para que el supervisor no las vea colgadas "en curso".
+        for s in self.get_queryset().filter(estado=Sesion.Estado.INICIADA).select_related(
+            "entrevista", "entrevista__prueba"
+        ):
+            _cerrar_si_vencida(s)
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        _cerrar_si_vencida(self.get_object())
+        return super().retrieve(request, *args, **kwargs)
+
     @action(detail=True, methods=["get"], url_path="detalle", permission_classes=[AllowAny], authentication_classes=[])
     def detalle_preparacion(self, request, pk=None):
         """
@@ -226,6 +267,7 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        _cerrar_si_vencida(sesion)
         serializer = SesionDetalleSerializer(sesion)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -393,6 +435,42 @@ class SesionViewSet(ModelViewSet):
             return Response({"detail": "Invitación no encontrada."}, status=status.HTTP_404_NOT_FOUND)
 
         entrevista = invitado.entrevista
+
+        # Convocatoria cancelada por el reclutador → nadie entra.
+        if entrevista.estado == entrevista.Estado.CANCELADA:
+            return Response(
+                {"detail": "Esta convocatoria fue cancelada.", "codigo": "convocatoria_cancelada"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ── Ventana de entrada ────────────────────────────────────────────────
+        # Solo aplica si la convocatoria tiene fecha programada. La fecha ABRE la
+        # ventana; la gracia limita hasta cuándo se puede INICIAR (no re-entrar).
+        ahora = timezone.now()
+        fp = entrevista.fecha_programada
+        ya_existe = Sesion.objects.filter(invitacion=invitado).exists()
+        if fp is not None:
+            if ahora < fp:
+                cuando = timezone.localtime(fp).strftime("%d/%m/%Y %H:%M")
+                return Response(
+                    {
+                        "detail": f"La evaluación aún no está disponible. Podrás ingresar a partir del {cuando}.",
+                        "codigo": "ventana_no_abierta",
+                        "disponible_en": fp.isoformat(),
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if not ya_existe:
+                gracia = timedelta(minutes=getattr(settings, "GRACIA_INICIO_MIN", 15))
+                if ahora > fp + gracia:
+                    return Response(
+                        {
+                            "detail": "La ventana para iniciar la evaluación ya cerró.",
+                            "codigo": "ventana_cerrada",
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
         # get_or_create + unique en invitacion = idempotente y a prueba de carrera
         # (2 pestañas casi simultáneas ya no crean 2 sesiones).
         sesion, creada = Sesion.objects.get_or_create(
@@ -411,6 +489,10 @@ class SesionViewSet(ModelViewSet):
                 entidad="sesion",
                 entidad_id=sesion.id,
             )
+        else:
+            # Re-entrada: si ya se le pasó el tiempo, ciérrala (el front mostrará
+            # que está finalizada en vez de dejarlo "responder" en una vencida).
+            _cerrar_si_vencida(sesion)
         if invitado.estado == "pendiente":
             invitado.estado = "aceptado"
             invitado.fecha_aceptacion = timezone.now()
@@ -501,10 +583,18 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # No se puede responder una sesión ya finalizada (entregada).
+        # Si ya se venció el tiempo, ciérrala antes de evaluar el estado.
+        _cerrar_si_vencida(sesion)
+
+        # No se puede responder una sesión finalizada (entregada o vencida).
         if sesion.estado == Sesion.Estado.FINALIZADA:
+            if sesion.motivo_cierre == Sesion.MotivoCierre.VENCIDA:
+                return Response(
+                    {"detail": "Se agotó el tiempo de la evaluación.", "codigo": "tiempo_agotado"},
+                    status=status.HTTP_409_CONFLICT,
+                )
             return Response(
-                {"detail": "La sesión ya está finalizada."},
+                {"detail": "La sesión ya está finalizada.", "codigo": "sesion_finalizada"},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -579,9 +669,16 @@ class SesionViewSet(ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        sesion.estado = Sesion.Estado.FINALIZADA
-        sesion.fecha_fin = timezone.now()
-        sesion.save(update_fields=["estado", "fecha_fin", "fecha_actualizacion"])
+        # Si ya estaba cerrada (p.ej. vencida por tiempo), no la pisamos: devolvemos
+        # tal cual. Esto cubre la auto-entrega que llega justo después del deadline.
+        _cerrar_si_vencida(sesion)
+        if sesion.estado != Sesion.Estado.FINALIZADA:
+            sesion.estado = Sesion.Estado.FINALIZADA
+            sesion.fecha_fin = timezone.now()
+            sesion.motivo_cierre = Sesion.MotivoCierre.ENTREGADA
+            sesion.save(
+                update_fields=["estado", "fecha_fin", "motivo_cierre", "fecha_actualizacion"]
+            )
 
         inv = sesion.invitacion
         if inv is not None and inv.estado != "completado":
@@ -594,6 +691,7 @@ class SesionViewSet(ModelViewSet):
             sesion=sesion,
             entidad="sesion",
             entidad_id=sesion.id,
+            detalle={"motivo": sesion.motivo_cierre},
         )
         return Response(SesionSerializer(sesion).data, status=status.HTTP_200_OK)
 

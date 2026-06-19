@@ -64,6 +64,9 @@ class RegistroAuditoriaSerializer(serializers.ModelSerializer):
 
 class SesionSerializer(serializers.ModelSerializer):
     room_name = serializers.UUIDField(read_only=True)
+    # Tiempo límite real para el countdown del front (inicio + duración efectiva).
+    deadline = serializers.DateTimeField(read_only=True)
+    duracion_efectiva_minutos = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Sesion
@@ -74,14 +77,25 @@ class SesionSerializer(serializers.ModelSerializer):
             "creada_por",
             "room_name",
             "estado",
+            "motivo_cierre",
             "nota_final",
             "estado_correccion",
             "observaciones_internas",
             "fecha_inicio",
             "fecha_fin",
+            "deadline",
+            "duracion_efectiva_minutos",
             "fecha_actualizacion",
         ]
-        read_only_fields = ["id", "room_name", "fecha_inicio", "fecha_actualizacion"]
+        read_only_fields = [
+            "id",
+            "room_name",
+            "motivo_cierre",
+            "fecha_inicio",
+            "fecha_actualizacion",
+            "deadline",
+            "duracion_efectiva_minutos",
+        ]
 
 
 class SesionDetalleSerializer(serializers.ModelSerializer):
@@ -93,9 +107,11 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
     descripcion_entrevista = serializers.CharField(source="entrevista.descripcion", read_only=True)
     evaluador_nombre = serializers.CharField(source="entrevista.evaluador.get_full_name", read_only=True)
     evaluador_email = serializers.CharField(source="entrevista.evaluador.email", read_only=True)
-    duracion_minutos = serializers.IntegerField(source="entrevista.duracion_minutos", read_only=True)
+    # Duración EFECTIVA (override de convocatoria o, si no, la de la prueba).
+    duracion_minutos = serializers.IntegerField(source="duracion_efectiva_minutos", read_only=True)
     fecha_programada = serializers.DateTimeField(source="entrevista.fecha_programada", read_only=True)
-    
+    deadline = serializers.DateTimeField(read_only=True)
+
     # Invitados
     invitados = serializers.SerializerMethodField()
 
@@ -105,6 +121,7 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "id",
             "room_name",
             "estado",
+            "motivo_cierre",
             "nota_final",
             "estado_correccion",
             "titulo_entrevista",
@@ -115,12 +132,14 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "fecha_programada",
             "fecha_inicio",
             "fecha_fin",
+            "deadline",
             "observaciones_internas",
             "invitados",
         ]
         read_only_fields = [
             "id",
             "room_name",
+            "motivo_cierre",
             "titulo_entrevista",
             "descripcion_entrevista",
             "evaluador_nombre",
@@ -129,6 +148,7 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "fecha_programada",
             "fecha_inicio",
             "fecha_fin",
+            "deadline",
             "invitados",
         ]
 

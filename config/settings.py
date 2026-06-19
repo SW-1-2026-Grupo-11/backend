@@ -142,6 +142,12 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
 }
 
+# ===== CICLO DE VIDA DE LA SESIÓN =====
+# Minutos de gracia para iniciar tarde una evaluación tras la fecha programada.
+# (Después de fecha_programada + gracia, ya no se puede INICIAR una sesión nueva;
+# las sesiones ya iniciadas siguen hasta su propio deadline.)
+GRACIA_INICIO_MIN = env.int("GRACIA_INICIO_MIN", default=15)
+
 JITSI_DOMAIN = env("JITSI_DOMAIN", default="meet.jit.si")
 JITSI_ROOM_PREFIX = env("JITSI_ROOM_PREFIX", default="video_jitsi")
 
