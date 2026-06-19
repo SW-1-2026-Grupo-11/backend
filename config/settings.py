@@ -17,7 +17,11 @@ AUTH_USER_MODEL = "usuarios.Usuario"
 
 SECRET_KEY = env("SECRET_KEY", default="dev-only-secret-key")
 DEBUG = env("DEBUG")
-ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+# El ai-service llama a Django por el nombre interno del servicio ("backend"),
+# así que ese host SIEMPRE debe estar permitido (si no, DisallowedHost 400).
+ALLOWED_HOSTS = env("ALLOWED_HOSTS") or ["localhost", "127.0.0.1"]
+if "backend" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, "backend"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",

@@ -264,7 +264,7 @@ class SesionViewSet(ModelViewSet):
         sesion.save()
         return Response(SesionDetalleSerializer(sesion).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["patch"], url_path="observaciones")
+    @action(detail=True, methods=["patch"], url_path="observaciones", permission_classes=[AllowAny], authentication_classes=[])
     def actualizar_observaciones(self, request, pk=None):
         """
         Actualiza las observaciones internas de la sesión.
