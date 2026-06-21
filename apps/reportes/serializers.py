@@ -4,32 +4,56 @@ from apps.reportes.models import Reporte
 
 
 class ReporteSerializer(serializers.ModelSerializer):
-    entrevista_id = serializers.IntegerField(read_only=True)
-    participante_id = serializers.IntegerField(read_only=True)
-    id_entrevista = serializers.IntegerField(write_only=True, required=False)
-    id_participante = serializers.IntegerField(write_only=True, required=False)
+    # Datos derivados de la sesión para que el front no tenga que cruzar.
+    candidato_nombre = serializers.SerializerMethodField()
+    entrevista_id = serializers.IntegerField(source="sesion.entrevista_id", read_only=True)
+    estado_sesion = serializers.CharField(source="sesion.estado", read_only=True)
+    motivo_cierre = serializers.CharField(source="sesion.motivo_cierre", read_only=True, allow_null=True)
+    firmado_por_nombre = serializers.CharField(
+        source="firmado_por.get_full_name", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = Reporte
         fields = [
             "id",
+            "sesion",
+            "candidato_nombre",
             "entrevista_id",
-            "participante_id",
-            "id_entrevista",
-            "id_participante",
+            "estado_sesion",
+            "motivo_cierre",
+            "nota",
+            "nivel_riesgo",
+            "total_alertas",
+            "puntaje_atencion",
+            "puntaje_sospecha",
             "resumen_general",
             "resumen_participante",
             "recomendaciones",
-            "nivel_riesgo",
+            "decision",
+            "firmado_por",
+            "firmado_por_nombre",
+            "fecha_firma",
+            "observaciones_evaluador",
             "fecha_creacion",
+            "fecha_actualizacion",
         ]
-        read_only_fields = ["id", "fecha_creacion"]
+        read_only_fields = [
+            "id",
+            "nota",
+            "nivel_riesgo",
+            "total_alertas",
+            "puntaje_atencion",
+            "puntaje_sospecha",
+            "resumen_general",
+            "resumen_participante",
+            "recomendaciones",
+            "firmado_por",
+            "fecha_firma",
+            "fecha_creacion",
+            "fecha_actualizacion",
+        ]
 
-    def create(self, validated_data):
-        entrevista_id = validated_data.pop("id_entrevista", None)
-        participante_id = validated_data.pop("id_participante", None)
-        if entrevista_id is not None:
-            validated_data["entrevista_id"] = entrevista_id
-        if participante_id is not None:
-            validated_data["participante_id"] = participante_id
-        return super().create(validated_data)
+    def get_candidato_nombre(self, obj):
+        inv = obj.sesion.invitacion if obj.sesion_id else None
+        return inv.nombre if inv else None
