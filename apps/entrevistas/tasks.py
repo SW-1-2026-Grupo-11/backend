@@ -3,7 +3,38 @@ from django.core.mail import send_mail
 from django.conf import settings
 import logging
 
+from apps.usuarios.models import Usuario
+from apps.usuarios.services import enviar_push
+
 logger = logging.getLogger(__name__)
+
+
+@shared_task
+def enviar_push_entrevista_asignada(
+    evaluador_id: int,
+    titulo_entrevista: str,
+    fecha_programada: str,
+):
+    """Avisa al evaluador (vía push) que se le asignó una entrevista."""
+    try:
+        evaluador = Usuario.objects.get(pk=evaluador_id)
+    except Usuario.DoesNotExist:
+        logger.error(f"Push no enviada: evaluador {evaluador_id} no existe.")
+        return
+
+    if not evaluador.fcm_token:
+        logger.info(f"Evaluador {evaluador_id} sin fcm_token registrado; se omite push.")
+        return
+
+    enviado = enviar_push(
+        fcm_token=evaluador.fcm_token,
+        titulo="Nueva entrevista asignada",
+        cuerpo=f"Te asignaron la entrevista \"{titulo_entrevista}\" el {fecha_programada}.",
+    )
+    if enviado:
+        logger.info(f"✓ Push enviada a evaluador {evaluador_id} - Entrevista: {titulo_entrevista}")
+    else:
+        logger.warning(f"✗ Push no enviada a evaluador {evaluador_id} (token inválido o Firebase no configurado).")
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

@@ -15,6 +15,10 @@ class Usuario(AbstractUser):
     telefono = models.CharField(max_length=30, blank=True, null=True)
     rol = models.CharField(max_length=30, choices=Rol.choices, default=Rol.EVALUADOR)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
+    fcm_token = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text="Token de Firebase Cloud Messaging del dispositivo móvil (push).",
+    )
 
     REQUIRED_FIELDS = ["email", "first_name", "last_name"]
 
