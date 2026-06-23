@@ -13,6 +13,9 @@ class PruebaViewSet(ModelViewSet):
     queryset = Prueba.objects.all()
     serializer_class = PruebaSerializer
 
+    def perform_create(self, serializer):
+        serializer.save(creada_por=self.request.user)
+
 
 class SeccionViewSet(ModelViewSet):
     queryset = Seccion.objects.all()
@@ -36,6 +39,12 @@ class PreguntaViewSet(ModelViewSet):
         if seccion_id:
             qs = qs.filter(seccion_id=seccion_id)
         return qs
+
+    def perform_create(self, serializer):
+        pregunta = serializer.save()
+        if pregunta.formato == Pregunta.Formato.VERDADERO_FALSO:
+            Opcion.objects.create(pregunta=pregunta, texto="Verdadero", orden=1)
+            Opcion.objects.create(pregunta=pregunta, texto="Falso", orden=2)
 
 
 class OpcionViewSet(ModelViewSet):
