@@ -1,5 +1,6 @@
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 class EntrevistaViewSet(ModelViewSet):
     queryset = Entrevista.objects.all()
     serializer_class = EntrevistaSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["titulo", "descripcion"]
+    ordering_fields = ["fecha_programada", "fecha_creacion", "titulo"]
 
     @action(detail=False, methods=["post"], url_path="programar")
     @transaction.atomic
