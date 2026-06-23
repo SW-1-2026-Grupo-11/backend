@@ -134,6 +134,9 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "fecha_fin",
             "deadline",
             "observaciones_internas",
+            # Candidato dueño de ESTA sesión (no confundir con "invitados": esos son
+            # todos los de la convocatoria, este es el id de la sala inv-{id} real).
+            "invitacion",
             "invitados",
         ]
         read_only_fields = [
@@ -149,6 +152,7 @@ class SesionDetalleSerializer(serializers.ModelSerializer):
             "fecha_inicio",
             "fecha_fin",
             "deadline",
+            "invitacion",
             "invitados",
         ]
 
