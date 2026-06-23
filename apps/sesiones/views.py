@@ -332,13 +332,15 @@ class SesionViewSet(ModelViewSet):
 
         return Response(SesionDetalleSerializer(sesion).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["post"], url_path="agregar-invitado")
+    @action(detail=True, methods=["post"], url_path="agregar-invitado", permission_classes=[AllowAny], authentication_classes=[])
     def agregar_invitado(self, request, pk=None):
         """
-        Agrega un nuevo invitado a la sesión después de su creación.
-        
+        Agrega un nuevo invitado a la sesión después de su creación. Solo el
+        supervisor/moderador de esa entrevista puede hacerlo.
+
         POST /api/sesiones/{sesion_id}/agregar-invitado/
-        
+        Headers: Authorization: Bearer <jwt supervisor>
+
         Request:
         {
             "nombre": "Juan Pérez",
@@ -352,6 +354,12 @@ class SesionViewSet(ModelViewSet):
                 {"detail": "Sesión no encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        token = _decode_invitado_token(_bearer_token(request))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not token.get("moderator") or token.get("entrevista_id") != sesion.entrevista_id:
+            return Response({"detail": "No autorizado para esta sesión."}, status=status.HTTP_403_FORBIDDEN)
 
         nombre = request.data.get("nombre")
         email = request.data.get("email")
