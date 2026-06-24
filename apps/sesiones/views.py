@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.viewsets import ModelViewSet
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from django.utils import timezone
 from django.conf import settings
@@ -306,6 +306,35 @@ class SesionViewSet(ModelViewSet):
         sesion.save()
         return Response(SesionDetalleSerializer(sesion).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="supervisor-token")
+    def supervisor_token(self, request, pk=None):
+        """
+        Emite un JWT de moderador (igual al "link_supervisor" generado al programar
+        la entrevista) para el usuario autenticado, sobre la entrevista de esta
+        sesión. Lo usa el panel autenticado (SalaPage) para pedir luego el JWT de
+        Jitsi vía /sesiones/jitsi-token/ sin depender del link público.
+
+        POST /api/sesiones/{sesion_id}/supervisor-token/
+        → { "token": "<jwt app, moderator=true>" }
+        """
+        try:
+            sesion = Sesion.objects.select_related("entrevista").get(pk=pk)
+        except Sesion.DoesNotExist:
+            return Response(
+                {"detail": "Sesión no encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        usuario = request.user
+        refresh = RefreshToken()
+        refresh["usuario_id"] = usuario.id
+        refresh["entrevista_id"] = sesion.entrevista_id
+        refresh["nombre"] = usuario.get_full_name() or usuario.username
+        refresh["email"] = usuario.email
+        refresh["moderator"] = True
+
+        return Response({"token": str(refresh.access_token)}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["patch"], url_path="observaciones", permission_classes=[AllowAny], authentication_classes=[])
     def actualizar_observaciones(self, request, pk=None):
         """
@@ -332,13 +361,15 @@ class SesionViewSet(ModelViewSet):
 
         return Response(SesionDetalleSerializer(sesion).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["post"], url_path="agregar-invitado")
+    @action(detail=True, methods=["post"], url_path="agregar-invitado", permission_classes=[AllowAny], authentication_classes=[])
     def agregar_invitado(self, request, pk=None):
         """
-        Agrega un nuevo invitado a la sesión después de su creación.
-        
+        Agrega un nuevo invitado a la sesión después de su creación. Solo el
+        supervisor/moderador de esa entrevista puede hacerlo.
+
         POST /api/sesiones/{sesion_id}/agregar-invitado/
-        
+        Headers: Authorization: Bearer <jwt supervisor>
+
         Request:
         {
             "nombre": "Juan Pérez",
@@ -352,6 +383,12 @@ class SesionViewSet(ModelViewSet):
                 {"detail": "Sesión no encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        token = _decode_invitado_token(_bearer_token(request))
+        if token is None:
+            return Response({"detail": "Token inválido o expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not token.get("moderator") or token.get("entrevista_id") != sesion.entrevista_id:
+            return Response({"detail": "No autorizado para esta sesión."}, status=status.HTTP_403_FORBIDDEN)
 
         nombre = request.data.get("nombre")
         email = request.data.get("email")

@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import serializers
 
 from .models import Opcion, Pregunta, Prueba, Seccion
@@ -7,6 +8,7 @@ class PruebaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prueba
         fields = "__all__"
+        read_only_fields = ["creada_por"]
 
 
 class OpcionSerializer(serializers.ModelSerializer):
@@ -41,12 +43,28 @@ class PreguntaSerializer(serializers.ModelSerializer):
 class SeccionSerializer(serializers.ModelSerializer):
     preguntas = PreguntaSerializer(many=True, read_only=True)
 
+    def validate(self, attrs):
+        prueba = attrs.get("prueba") or getattr(self.instance, "prueba", None)
+        peso = attrs.get("peso_porcentual")
+        if peso is None:
+            peso = getattr(self.instance, "peso_porcentual", 100) if self.instance else 100
+        otras = Seccion.objects.filter(prueba=prueba)
+        if self.instance:
+            otras = otras.exclude(pk=self.instance.pk)
+        suma_otras = otras.aggregate(total=models.Sum("peso_porcentual"))["total"] or 0
+        if suma_otras + peso > 100:
+            raise serializers.ValidationError(
+                {"peso_porcentual": f"La suma de pesos de la prueba excedería 100% (actual: {suma_otras}%)."}
+            )
+        return attrs
+
     class Meta:
         model = Seccion
         fields = [
             "id",
             "prueba",
             "titulo",
+            "tipo",
             "descripcion",
             "orden",
             "peso_porcentual",

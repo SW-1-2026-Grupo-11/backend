@@ -1,5 +1,6 @@
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
@@ -11,7 +12,7 @@ import logging
 
 from .models import Entrevista, Invitado
 from .serializers import EntrevistaSerializer, ProgramarEntrevistaSerializer, InvitadoSerializer
-from .tasks import enviar_emails_invitaciones_masivas
+from .tasks import enviar_emails_invitaciones_masivas, enviar_push_entrevista_asignada
 from apps.usuarios.models import Usuario
 from apps.candidatos.models import Candidato
 from apps.pruebas.models import Prueba
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 class EntrevistaViewSet(ModelViewSet):
     queryset = Entrevista.objects.all()
     serializer_class = EntrevistaSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["titulo", "descripcion"]
+    ordering_fields = ["fecha_programada", "fecha_creacion", "titulo"]
 
     @action(detail=False, methods=["post"], url_path="programar")
     @transaction.atomic
@@ -209,17 +213,17 @@ class EntrevistaViewSet(ModelViewSet):
             token_supervisor = str(access_sup)
             link_supervisor = f"{base_url}/join?token={token_supervisor}"
 
+            # Convertir fecha_programada a string si es necesario
+            fecha_str = (
+                fecha_programada.isoformat()
+                if hasattr(fecha_programada, "isoformat")
+                else str(fecha_programada)
+            )
+
             # Encolar tareas de envío de email (asincrónico con Celery)
             emails_encolados = False
             try:
                 if invitados_para_email:
-                    # Convertir fecha_programada a string si es necesario
-                    fecha_str = (
-                        fecha_programada.isoformat()
-                        if hasattr(fecha_programada, "isoformat")
-                        else str(fecha_programada)
-                    )
-                    
                     # Encolar DESPUÉS del commit: evita que el worker de Celery
                     # lea datos que la transacción todavía no confirmó.
                     transaction.on_commit(
@@ -241,6 +245,16 @@ class EntrevistaViewSet(ModelViewSet):
             except Exception as e:
                 logger.error(f"Error encolando emails para entrevista {entrevista.id}: {str(e)}")
                 # No fallar la creación de entrevista si hay error en emails
+
+            # Avisar al evaluador asignado (push), igual que los emails: tras el commit.
+            if evaluador:
+                transaction.on_commit(
+                    lambda: enviar_push_entrevista_asignada.delay(
+                        evaluador_id=evaluador.id,
+                        titulo_entrevista=titulo,
+                        fecha_programada=fecha_str,
+                    )
+                )
 
             return Response(
                 {
