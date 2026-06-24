@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.sesiones",
     "apps.alertas",
     "apps.reportes",
+    "apps.ia",
 ]
 
 MIDDLEWARE = [
@@ -159,6 +160,13 @@ JITSI_XMPP_DOMAIN = env("JITSI_XMPP_DOMAIN", default="meet.jitsi")
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
+
+# ===== LLM LOCAL (Ollama) =====
+# Servicio `ollama` del docker-compose. Modelo qwen3:8b (bajar una vez con
+# `docker compose exec ollama ollama pull qwen3:8b`). Lo usan: corregir abiertas
+# (Celery, async), generar preguntas (endpoint) y resumir informe M6.
+OLLAMA_URL = env("OLLAMA_URL", default="http://ollama:11434")
+OLLAMA_MODEL = env("OLLAMA_MODEL", default="qwen3:8b")
 
 # ===== EMAIL CONFIGURATION =====
 # Para producción, usar variables de entorno en .env

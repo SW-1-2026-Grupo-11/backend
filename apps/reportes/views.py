@@ -1,12 +1,18 @@
+import logging
+
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.ia import prompts
+from apps.ia.client import IAError, chat_json
 from apps.reportes.models import Reporte
 from apps.reportes.serializers import ReporteSerializer
 from apps.sesiones.models import Sesion
+
+logger = logging.getLogger("apps.reportes")
 
 # ---------------------------------------------------------------------------
 # Cálculo de riesgo (ponderado) — se calcula AQUÍ de las alertas, no se recibe.
@@ -136,6 +142,38 @@ def _generar_textos_dinamicos(alertas_sesion, nivel_riesgo: str) -> tuple[str, s
     return resumen_general, resumen_participante, recomendaciones
 
 
+def _resumir_con_ia(alertas, nivel_riesgo, nota, fallback):
+    """
+    Redacta los 3 textos del informe con el LLM local. Si el LLM falla o no está
+    disponible, devuelve `fallback` (los textos por reglas). El informe SIEMPRE
+    se genera; la IA solo mejora la redacción cuando puede.
+    """
+    conteos: dict[str, int] = {}
+    for a in alertas:
+        conteos[a.tipo_alerta] = conteos.get(a.tipo_alerta, 0) + 1
+    datos = {
+        "nota_final": float(nota) if nota is not None else None,
+        "nivel_riesgo": nivel_riesgo,
+        "total_alertas": len(alertas),
+        "alertas_por_tipo": {_label(t): c for t, c in conteos.items()},
+        "altas": sum(1 for a in alertas if a.severidad == "alta"),
+        "medias": sum(1 for a in alertas if a.severidad == "media"),
+    }
+    system, prompt = prompts.resumir_informe(datos)
+    try:
+        data = chat_json(prompt, system=system, thinking=False, temperature=0.3)
+    except IAError as exc:
+        logger.info("Resumen IA no disponible, uso textos por reglas: %s", exc)
+        return fallback
+
+    g = (data.get("resumen_general") or "").strip()
+    p = (data.get("resumen_participante") or "").strip()
+    r = (data.get("recomendaciones") or "").strip()
+    fb_g, fb_p, fb_r = fallback
+    # Si algún campo viene vacío, se respeta el de reglas para ese campo.
+    return (g or fb_g, p or fb_p, r or fb_r)
+
+
 class ReporteViewSet(viewsets.ModelViewSet):
     queryset = Reporte.objects.select_related(
         "sesion", "sesion__invitacion", "firmado_por"
@@ -175,8 +213,10 @@ class ReporteViewSet(viewsets.ModelViewSet):
 
         alertas = list(sesion.alertas.all())
         riesgo = _calcular_riesgo(alertas)
-        resumen_general, resumen_participante, recomendaciones = _generar_textos_dinamicos(
-            alertas, riesgo
+        textos_reglas = _generar_textos_dinamicos(alertas, riesgo)
+        # La IA mejora la redacción; si no está disponible, caen los textos por reglas.
+        resumen_general, resumen_participante, recomendaciones = _resumir_con_ia(
+            alertas, riesgo, sesion.nota_final, textos_reglas
         )
         sospecha = _puntaje_sospecha(alertas)
 
