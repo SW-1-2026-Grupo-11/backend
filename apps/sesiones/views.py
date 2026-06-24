@@ -730,6 +730,15 @@ class SesionViewSet(ModelViewSet):
             entidad_id=sesion.id,
             detalle={"motivo": sesion.motivo_cierre},
         )
+
+        # Corrección automática en segundo plano (objetivas + abiertas con IA).
+        # No debe romper la entrega del candidato si el broker no está disponible.
+        try:
+            from apps.ia.tasks import calificar_sesion
+            calificar_sesion.delay(sesion.id)
+        except Exception:
+            logger.exception("No se pudo encolar la corrección IA de la sesión %s", sesion.id)
+
         return Response(SesionSerializer(sesion).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="calificar-auto")
